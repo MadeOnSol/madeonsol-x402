@@ -58,3 +58,12 @@ console.log(info.endpoints); // all endpoints with prices and params
 ```
 
 Docs: [madeonsol.com/solana-api](https://madeonsol.com/solana-api)
+
+## Also Available
+
+| Platform | Package |
+|---|---|
+| Python (LangChain, CrewAI) | [`madeonsol-x402`](https://github.com/LamboPoewert/madeonsol-python) on PyPI |
+| MCP Server (Claude, Cursor) | [`mcp-server-madeonsol`](https://www.npmjs.com/package/mcp-server-madeonsol) |
+| ElizaOS | [`@madeonsol/plugin-madeonsol`](https://www.npmjs.com/package/@madeonsol/plugin-madeonsol) |
+| Solana Agent Kit | [`solana-agent-kit-plugin-madeonsol`](https://www.npmjs.com/package/solana-agent-kit-plugin-madeonsol) |
