@@ -1,0 +1,42 @@
+{
+  "name": "madeonsol-x402",
+  "version": "0.1.0",
+  "description": "x402 client SDK for MadeOnSol Solana KOL intelligence API",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "solana",
+    "x402",
+    "kol",
+    "trading",
+    "api",
+    "micropayments"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LamboPoewert/madeonsol-x402"
+  },
+  "peerDependencies": {
+    "@x402/fetch": ">=0.0.1",
+    "@x402/svm": ">=0.0.1",
+    "@x402/core": ">=0.0.1",
+    "@solana/kit": ">=2.0.0",
+    "@scure/base": ">=1.0.0"
+  }
+}
