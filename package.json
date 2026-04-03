@@ -1,6 +1,6 @@
 {
   "name": "madeonsol-x402",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "x402 client SDK for MadeOnSol Solana KOL intelligence API",
   "type": "module",
   "main": "./dist/index.js",

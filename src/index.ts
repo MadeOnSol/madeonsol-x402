@@ -8,6 +8,13 @@ import type {
   DeployerAlertsParams,
   DeployerAlertsResponse,
   DiscoveryResponse,
+  CreateWebhookParams,
+  UpdateWebhookParams,
+  Webhook,
+  WebhookWithSecret,
+  WebhookDelivery,
+  WebhookTestResult,
+  StreamToken,
 } from "./types.js";
 
 export type {
@@ -25,6 +32,15 @@ export type {
   DeployerAlertsResponse,
   DiscoveryEndpoint,
   DiscoveryResponse,
+  WebhookEvent,
+  WebhookFilters,
+  Webhook,
+  WebhookWithSecret,
+  CreateWebhookParams,
+  UpdateWebhookParams,
+  WebhookDelivery,
+  WebhookTestResult,
+  StreamToken,
 } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://madeonsol.com";
@@ -106,4 +122,88 @@ export class MadeOnSolX402 {
 /** Convenience factory — creates a ready-to-use client. */
 export function createClient(privateKey: string, baseUrl?: string): MadeOnSolX402 {
   return new MadeOnSolX402({ privateKey, baseUrl });
+}
+
+/* ── REST API client (RapidAPI-authenticated, for webhooks + streaming) ── */
+
+interface MadeOnSolRESTOptions {
+  /** RapidAPI API key (passed as x-rapidapi-key header) */
+  apiKey: string;
+  /** API base URL (default: https://madeonsol.com) */
+  baseUrl?: string;
+  /** RapidAPI host header (default: auto-detected) */
+  rapidApiHost?: string;
+}
+
+/**
+ * REST API client for webhook management and WebSocket streaming tokens.
+ * Requires a RapidAPI Pro or Ultra subscription.
+ */
+export class MadeOnSolREST {
+  private apiKey: string;
+  private baseUrl: string;
+  private host: string;
+
+  constructor(opts: MadeOnSolRESTOptions) {
+    this.apiKey = opts.apiKey;
+    this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+    this.host = opts.rapidApiHost ?? "madeonsol-solana-kol-tracker-tools-api.p.rapidapi.com";
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await fetch(`${this.baseUrl}/api/v1${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "x-rapidapi-key": this.apiKey,
+        "x-rapidapi-host": this.host,
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`MadeOnSol API error ${res.status}: ${text}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  /** Create a webhook. Returns the webhook with HMAC secret (only shown once). */
+  async createWebhook(params: CreateWebhookParams): Promise<{ webhook: WebhookWithSecret; note: string }> {
+    return this.request("POST", "/webhooks", params);
+  }
+
+  /** List all your webhooks. */
+  async listWebhooks(): Promise<{ webhooks: Webhook[] }> {
+    return this.request("GET", "/webhooks");
+  }
+
+  /** Get webhook detail with recent delivery log. */
+  async getWebhook(id: number): Promise<{ webhook: Webhook; recent_deliveries: WebhookDelivery[] }> {
+    return this.request("GET", `/webhooks/${id}`);
+  }
+
+  /** Update a webhook (URL, events, filters, or re-enable). */
+  async updateWebhook(id: number, params: UpdateWebhookParams): Promise<{ webhook: Webhook }> {
+    return this.request("PATCH", `/webhooks/${id}`, params);
+  }
+
+  /** Delete a webhook permanently. */
+  async deleteWebhook(id: number): Promise<{ deleted: boolean }> {
+    return this.request("DELETE", `/webhooks/${id}`);
+  }
+
+  /** Send a test payload to verify your webhook URL. */
+  async testWebhook(webhookId: number): Promise<WebhookTestResult> {
+    return this.request("POST", "/webhooks/test", { webhook_id: webhookId });
+  }
+
+  /** Generate a 24h WebSocket streaming token. */
+  async getStreamToken(): Promise<StreamToken> {
+    return this.request("POST", "/stream/token");
+  }
+}
+
+/** Convenience factory — creates a REST API client for webhooks + streaming. */
+export function createRESTClient(apiKey: string, baseUrl?: string): MadeOnSolREST {
+  return new MadeOnSolREST({ apiKey, baseUrl });
 }

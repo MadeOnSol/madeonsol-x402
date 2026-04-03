@@ -120,6 +120,67 @@ export interface DeployerAlertsParams {
   offset?: number;
 }
 
+/* ── Webhooks (REST API — Pro/Ultra) ── */
+
+export type WebhookEvent = "kol:trade" | "kol:coordination" | "deployer:alert" | "deployer:bond";
+
+export interface WebhookFilters {
+  min_sol?: number;
+  action?: "buy" | "sell";
+  kol_name?: string;
+  deployer_tier?: string[];
+  min_kols?: number;
+}
+
+export interface Webhook {
+  id: number;
+  url: string;
+  events: WebhookEvent[];
+  filters: WebhookFilters;
+  is_active: boolean;
+  created_at: string;
+  last_delivered_at: string | null;
+  consecutive_failures: number;
+}
+
+export interface WebhookWithSecret extends Webhook {
+  secret: string;
+}
+
+export interface CreateWebhookParams {
+  url: string;
+  events: WebhookEvent[];
+  filters?: WebhookFilters;
+}
+
+export interface UpdateWebhookParams {
+  url?: string;
+  events?: WebhookEvent[];
+  filters?: WebhookFilters;
+  is_active?: boolean;
+}
+
+export interface WebhookDelivery {
+  event_type: string;
+  status_code: number | null;
+  response_time_ms: number;
+  delivered_at: string;
+  error: string | null;
+}
+
+export interface WebhookTestResult {
+  success: boolean;
+  status_code?: number;
+  response_time_ms: number;
+  error?: string;
+}
+
+export interface StreamToken {
+  token: string;
+  expires_at: string;
+  ws_url: string;
+}
+
 /* ── Discovery ── */
 
 export interface DiscoveryEndpoint {
