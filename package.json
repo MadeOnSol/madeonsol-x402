@@ -1,7 +1,7 @@
 {
   "name": "madeonsol-x402",
-  "version": "0.2.0",
-  "description": "x402 client SDK for MadeOnSol Solana KOL intelligence API",
+  "version": "1.8.0",
+  "description": "Official TypeScript SDK for the MadeOnSol Solana API — KOL wallet tracking, Pump.fun deployer intelligence, x402 micropayments, and the all-DEX trade firehose. Free tier at madeonsol.com/pricing.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,15 +17,31 @@
   ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": ""
+    "preflight": "bash ../../scripts/preflight-publish.sh",
+    "prepublishOnly": "npm run preflight && npm run build"
   },
   "keywords": [
     "solana",
     "x402",
     "kol",
+    "kol-tracker",
     "trading",
     "api",
-    "micropayments"
+    "micropayments",
+    "ai-agent",
+    "memecoin",
+    "memecoin-tracker",
+    "alpha",
+    "alpha-bot",
+    "copy-trading",
+    "copy-trade",
+    "pumpfun",
+    "pumpfun-sniper",
+    "deployer-hunter",
+    "smart-money",
+    "trade-stream",
+    "solana-trading-bot",
+    "madeonsol"
   ],
   "license": "MIT",
   "repository": {
