@@ -186,6 +186,51 @@ const { subscription, webhook_secret } = await rest.firstTouchSubscriptionsCreat
 
 `firstTouchSubscriptionsList`, `firstTouchSubscriptionsGet(id)`, `firstTouchSubscriptionsUpdate(id, params)`, `firstTouchSubscriptionsDelete(id)` round out the CRUD.
 
+### Price alerts *(new in 1.9)*
+
+CRUD for token dip/recovery price alerts. Fires via WebSocket (`price:alerts` channel) and/or HMAC-signed webhook when a token's market cap crosses your threshold. PRO=5 rules, ULTRA=25.
+
+```ts
+const { alert, webhook_secret } = await rest.priceAlertsCreate({
+  name: "SOL dip buy",
+  token_mint: "So11111111111111111111111111111111111111112",
+  condition: "below",       // "below" | "above"
+  threshold_mc_usd: 5_000_000_000,
+  cooldown_min: 120,
+  delivery_mode: "both",
+  webhook_url: "https://you.com/hooks/price",
+});
+// → store webhook_secret — shown ONCE
+```
+
+`priceAlertsList`, `priceAlertsGet(id)`, `priceAlertsUpdate(id, params)`, `priceAlertsDelete(id)` round out the CRUD.
+
+### Scout leaderboard & KOL consensus *(new in 1.9)*
+
+| Method | Tier | Description |
+|---|---|---|
+| `rest.scoutLeaderboard(params?)` | PRO+ | Top scout-tier KOLs ranked by first-touch follow-on rate, win rate, and ROI |
+| `rest.kolConsensus(params?)` | PRO+ | Tokens with the strongest KOL agreement signal — weighted by scout score and recent PnL |
+| `rest.peakHistory(mint)` | PRO+ | Historical peak-density windows for a token — every coordination spike with KOL breakdown |
+| `rest.coordinationHistory(params?)` | PRO+ | Global coordination event log with token, KOL count, score, and outcome |
+
+```ts
+const { leaderboard } = await rest.scoutLeaderboard({ period: "30d", limit: 25 });
+const { tokens } = await rest.kolConsensus({ min_kols: 5, period: "24h" });
+```
+
+### Wallet derived stats *(new in 1.9)*
+
+`walletStats(address)` now includes a `stats` object with derived fields computed from the 90-day trade window:
+
+```ts
+const { stats } = await rest.walletStats("WALLET_ADDRESS");
+// stats.win_rate     — fraction 0-1, tokens sold above cost basis
+// stats.roi          — aggregate return on invested SOL
+// stats.verdict      — "strong" | "profitable" | "neutral" | "losing"
+// stats.biggest_miss — token with the highest post-exit gain the wallet missed
+```
+
 ### Copy-trade rules
 
 Server-side rules that fire signals when one of your watched source wallets trades. Delivered via webhook (HMAC-signed) and/or WebSocket. PRO=3 rules × 5 source wallets each; ULTRA=20 × 50.

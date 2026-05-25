@@ -1010,6 +1010,187 @@ export interface WalletTrackerSummaryResponse {
 }
 
 
+// ─── Wallet derived stats (v1.9) ────────────────────────────────────────────
+
+export interface WalletStandoutTrade {
+  token_mint:    string;
+  token_symbol:  string | null;
+  pnl_sol:       number;
+  sol_in:        number;
+  sol_out:       number;
+  roi_pct:       number;
+}
+
+export interface WalletBiggestMiss {
+  token_mint:           string;
+  token_symbol:         string | null;
+  actual_sol_out:       number;
+  potential_sol_at_ath:  number;
+  missed_sol:           number;
+  ath_mc_usd:           number;
+  sold_at_mc_usd:       number | null;
+}
+
+export type WalletVerdictTone = "green" | "red" | "amber" | "muted";
+
+export interface WalletVerdict {
+  label:       string;
+  description: string;
+  tone:        WalletVerdictTone;
+}
+
+export interface WalletDerivedStats {
+  win_rate:               number | null;
+  roi_pct:                number | null;
+  total_realized_pnl_sol: number;
+  best_trade:             WalletStandoutTrade | null;
+  worst_trade:            WalletStandoutTrade | null;
+  biggest_miss:           WalletBiggestMiss | null;
+  verdict:                WalletVerdict | null;
+}
+
+// ─── Price alerts (v1.9) ────────────────────────────────────────────────────
+
+export type PriceAlertDeliveryMode = "webhook" | "websocket" | "both";
+export type PriceAlertStatus = "watching" | "dipped" | "recovered" | "expired";
+
+export interface PriceAlertCreateParams {
+  token_mint: string;
+  drop_pct: number;
+  recovery_pct?: number;
+  name?: string;
+  delivery_mode?: PriceAlertDeliveryMode;
+  webhook_url?: string;
+}
+
+export interface PriceAlertUpdateParams {
+  name?: string | null;
+  delivery_mode?: PriceAlertDeliveryMode;
+  webhook_url?: string | null;
+  is_active?: boolean;
+}
+
+export interface PriceAlert {
+  id: number;
+  name: string | null;
+  token_mint: string;
+  token_symbol: string | null;
+  baseline_mc_usd: number;
+  drop_pct: number;
+  recovery_pct: number | null;
+  status: PriceAlertStatus;
+  dip_low_mc_usd: number | null;
+  dip_fired_at: string | null;
+  delivery_mode: PriceAlertDeliveryMode;
+  webhook_url: string | null;
+  is_active: boolean;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PriceAlertListResponse {
+  alerts: PriceAlert[];
+}
+
+export interface PriceAlertCreateResponse {
+  alert: PriceAlert;
+  webhook_secret: string | null;
+  note?: string;
+}
+
+export interface PriceAlertGetResponse {
+  alert: PriceAlert;
+}
+
+export interface PriceAlertUpdateResponse {
+  alert: PriceAlert;
+}
+
+export interface PriceAlertDeleteResponse {
+  deleted: boolean;
+}
+
+export interface PriceAlertEvent {
+  id: number;
+  alert_id: number;
+  event_type: "dip" | "recovery";
+  fired_at: string;
+  token_mint: string;
+  baseline_mc_usd: number;
+  current_mc_usd: number;
+  drop_pct_actual: number | null;
+  dip_low_mc_usd: number | null;
+  recovery_pct_actual: number | null;
+  delivered: boolean;
+}
+
+export interface PriceAlertEventsParams {
+  alert_id?: number;
+  event_type?: "dip" | "recovery";
+  since?: string;
+  limit?: number;
+}
+
+export interface PriceAlertEventsResponse {
+  events: PriceAlertEvent[];
+}
+
+// ─── Scout leaderboard (v1.9) ──────────────────────────────────────────────
+
+export type ScoutLeaderboardSort = "swarm_3plus_pct" | "n_first_touches_30d" | "swarm_5plus_pct" | "scout_score";
+
+export interface ScoutLeaderboardParams {
+  limit?: number;
+  scout_tier?: ScoutTier;
+  sort?: ScoutLeaderboardSort;
+}
+
+// ─── KOL consensus (v1.9) ──────────────────────────────────────────────────
+
+export interface KolConsensusResponse {
+  total_kol_buyers: number;
+  total_kol_sellers: number;
+  kol_exit_rate: number | null;
+  net_flow_sol: number;
+  total_buy_sol: number;
+  total_sell_sol: number;
+  first_kol_buy_at: string | null;
+  last_kol_buy_at: string | null;
+  first_touch_wallet: string | null;
+  first_touch_at: string | null;
+  median_entry_mc_usd: number | null;
+  buyers?: string[];
+  exited?: string[];
+}
+
+// ─── Peak history (v1.9) ───────────────────────────────────────────────────
+
+export interface PeakHistoryResponse {
+  peak_mc_usd: number | null;
+  peak_mc_updated_at: string | null;
+  current_mc_usd: number | null;
+  current_price_usd: number | null;
+  decline_from_peak_pct: number | null;
+  mc_at_bond: number | null;
+  mc_1h_after_bond: number | null;
+  mc_6h_after_bond: number | null;
+  mc_24h_after_bond: number | null;
+  mc_7d_after_bond: number | null;
+  still_alive_1h: boolean | null;
+  time_to_bond_minutes: number | null;
+  deployed_at: string | null;
+  bonded_at: string | null;
+}
+
+// ─── Coordination history (v1.9) ───────────────────────────────────────────
+
+export interface CoordinationHistoryParams {
+  limit?: number;
+  since?: string;
+  min_score?: number;
+}
+
 // ─── /me — v1.7 ──────────────────────────────────────────────────────────────
 
 export type ApiTier = "BASIC" | "TRADER" | "PRO" | "ULTRA";
@@ -1146,10 +1327,66 @@ export interface WalletFlags {
   deployer_bonding_rate:    number | null;
 }
 
+// v1.8.1 enrichments — additive, nullable, returned alongside stats + flags.
+export interface WalletTopToken {
+  token_mint:       string;
+  token_symbol:     string | null;
+  buys:             number;
+  sells:            number;
+  sol_in:           number;
+  sol_out:          number;
+  realized_pnl_sol: number;
+  current_mc_usd:   number | null;
+  peak_mc_usd:      number | null;
+  last_traded_at:   string;
+}
+
+export interface WalletTradingStyle {
+  total_trades:            number;
+  avg_trade_size_sol:      number;
+  sniper_rate:             number;  // 0-1: fraction of trades with early_buyer_rank ≤ 10
+  early_entries:           number;
+  round_trip_rate:         number;  // 0-1: fraction of tokens with both buys and sells
+  tokens_with_round_trips: number;
+  median_hold_minutes:     number | null;
+  dominant_action:         "buy" | "sell" | "balanced";
+}
+
+export interface WalletDeployerTierEntry {
+  tier:  string;  // "elite" | "good" | "rising" | "moderate" | "cold" | "unranked"
+  count: number;
+}
+
+export interface WalletDeployerBreakdown {
+  total_tokens:      number;
+  tracked_deployers: number;
+  by_tier:           WalletDeployerTierEntry[];
+}
+
+export interface WalletRecentTrade {
+  token_mint:    string;
+  token_symbol:  string | null;
+  action:        "buy" | "sell";
+  sol_amount:    number;
+  block_time:    number;
+  traded_at:     string;
+  tx_signature:  string;
+}
+
 export interface WalletStatsResponse {
   address: string;
   stats:   WalletStats | null;
   flags:   WalletFlags;
+  // v1.8.1: enrichments — top traded tokens with realized PnL, trading-style
+  // signals, deployer-tier breakdown, recent-trades timeline. Fields are
+  // optional on the type so old SDK consumers that don't decode them keep
+  // working when the server adds more enrichment fields.
+  top_tokens?:         WalletTopToken[];
+  trading_style?:      WalletTradingStyle | null;
+  deployer_breakdown?: WalletDeployerBreakdown | null;
+  recent_trades?:      WalletRecentTrade[];
+  /** Derived analytics: win rate, ROI, best/worst trade, biggest miss, verdict (v1.9+). */
+  derived?:            WalletDerivedStats;
 }
 
 export interface WalletPnlSummary {

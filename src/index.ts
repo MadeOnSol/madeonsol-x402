@@ -67,6 +67,19 @@ import type {
   WalletPositionsResponse,
   WalletTradesParams,
   WalletTradesResponse,
+  PriceAlertCreateParams,
+  PriceAlertUpdateParams,
+  PriceAlertListResponse,
+  PriceAlertCreateResponse,
+  PriceAlertGetResponse,
+  PriceAlertUpdateResponse,
+  PriceAlertDeleteResponse,
+  PriceAlertEventsParams,
+  PriceAlertEventsResponse,
+  ScoutLeaderboardParams,
+  KolConsensusResponse,
+  PeakHistoryResponse,
+  CoordinationHistoryParams,
 } from "./types.js";
 
 export type {
@@ -176,6 +189,11 @@ export type {
   WalletStats,
   WalletFlags,
   WalletStatsResponse,
+  WalletTopToken,
+  WalletTradingStyle,
+  WalletDeployerTierEntry,
+  WalletDeployerBreakdown,
+  WalletRecentTrade,
   WalletPnlSummary,
   WalletPnlCurvePoint,
   WalletClosedPosition,
@@ -185,6 +203,29 @@ export type {
   WalletTradesParams,
   WalletTrade,
   WalletTradesResponse,
+  WalletStandoutTrade,
+  WalletBiggestMiss,
+  WalletVerdictTone,
+  WalletVerdict,
+  WalletDerivedStats,
+  PriceAlertDeliveryMode,
+  PriceAlertStatus,
+  PriceAlert,
+  PriceAlertCreateParams,
+  PriceAlertUpdateParams,
+  PriceAlertListResponse,
+  PriceAlertCreateResponse,
+  PriceAlertGetResponse,
+  PriceAlertUpdateResponse,
+  PriceAlertDeleteResponse,
+  PriceAlertEvent,
+  PriceAlertEventsParams,
+  PriceAlertEventsResponse,
+  ScoutLeaderboardSort,
+  ScoutLeaderboardParams,
+  KolConsensusResponse,
+  PeakHistoryResponse,
+  CoordinationHistoryParams,
 } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://madeonsol.com";
@@ -367,6 +408,38 @@ export class MadeOnSolX402 {
   async walletTrades(address: string, params?: WalletTradesParams): Promise<WalletTradesResponse> {
     return this.request(`/api/x402/wallet/${encodeURIComponent(address)}/trades`,
       params as Record<string, string | number | undefined>);
+  }
+
+  /**
+   * v1.9 — Scout leaderboard: top KOLs ranked by scout score, first-touch frequency,
+   * and swarm attraction rate. ULTRA only.
+   */
+  async scoutLeaderboard(params?: ScoutLeaderboardParams): Promise<unknown> {
+    return this.request("/api/x402/kol/scouts/leaderboard", params as Record<string, string | number | undefined>);
+  }
+
+  /**
+   * v1.9 — Coordination history: past coordination alert fires with token, score, KOL count.
+   * ULTRA only.
+   */
+  async coordinationHistory(params?: CoordinationHistoryParams): Promise<unknown> {
+    return this.request("/api/x402/kol/coordination/history", params as Record<string, string | number | undefined>);
+  }
+
+  /**
+   * v1.9 — KOL consensus on a token: how many KOLs bought/sold, exit rate,
+   * net flow, median entry MC. ULTRA gets individual wallet arrays.
+   */
+  async kolConsensus(mint: string): Promise<KolConsensusResponse> {
+    return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/kol-consensus`);
+  }
+
+  /**
+   * v1.9 — Peak MC history for a token: ATH, decline from peak, MC at bond
+   * and at 1h/6h/24h/7d after bond.
+   */
+  async peakHistory(mint: string): Promise<PeakHistoryResponse> {
+    return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/peak-history`);
   }
 
   /** Free discovery endpoint — lists all available endpoints and prices. */
@@ -687,6 +760,60 @@ export class MadeOnSolREST {
   /** Per-wallet stats (counts, SOL bought/sold, last activity). */
   async walletTrackerSummary(params?: WalletTrackerSummaryParams): Promise<WalletTrackerSummaryResponse> {
     return this.request("GET", "/wallet-tracker/summary", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /* ── Price alerts (PRO/ULTRA, v1.9) ── */
+
+  /** List your price alerts. */
+  async priceAlertsList(): Promise<PriceAlertListResponse> {
+    return this.request("GET", "/price-alerts");
+  }
+
+  /** Create a price alert. Returns webhook_secret ONCE — store it. */
+  async priceAlertsCreate(params: PriceAlertCreateParams): Promise<PriceAlertCreateResponse> {
+    return this.request("POST", "/price-alerts", params);
+  }
+
+  /** Get one price alert by id. */
+  async priceAlertsGet(id: number | string): Promise<PriceAlertGetResponse> {
+    return this.request("GET", `/price-alerts/${id}`);
+  }
+
+  /** Update alert name, delivery mode, webhook URL, or is_active. Thresholds are immutable. */
+  async priceAlertsUpdate(id: number | string, params: PriceAlertUpdateParams): Promise<PriceAlertUpdateResponse> {
+    return this.request("PATCH", `/price-alerts/${id}`, params);
+  }
+
+  /** Delete a price alert and its event history. */
+  async priceAlertsDelete(id: number | string): Promise<PriceAlertDeleteResponse> {
+    return this.request("DELETE", `/price-alerts/${id}`);
+  }
+
+  /** Fired event history (30-day retention). Filter by alert_id, event_type, since. */
+  async priceAlertsEvents(params?: PriceAlertEventsParams): Promise<PriceAlertEventsResponse> {
+    return this.request("GET", "/price-alerts/events", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /* ── v1.9 new read endpoints ── */
+
+  /** Scout leaderboard: top KOLs ranked by scout score and swarm attraction rate. ULTRA only. */
+  async scoutLeaderboard(params?: ScoutLeaderboardParams): Promise<unknown> {
+    return this.request("GET", "/kol/scouts/leaderboard", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** Coordination history: past coordination alert fires with token, score, KOL count. ULTRA only. */
+  async coordinationHistory(params?: CoordinationHistoryParams): Promise<unknown> {
+    return this.request("GET", "/kol/coordination/history", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** KOL consensus on a token: buyers/sellers, exit rate, net flow, median entry MC. ULTRA gets wallet arrays. */
+  async kolConsensus(mint: string): Promise<KolConsensusResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/kol-consensus`);
+  }
+
+  /** Peak MC history: ATH, decline from peak, MC at bond and at 1h/6h/24h/7d after bond. */
+  async peakHistory(mint: string): Promise<PeakHistoryResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/peak-history`);
   }
 
   // ── Universal wallet endpoints (PRO+, any wallet — not just curated KOLs) ──
