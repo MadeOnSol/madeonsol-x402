@@ -9,7 +9,7 @@
 
 TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligence API.
 
-> Real-time Solana trading intelligence: track 1,000+ KOL wallets with <3s latency, score 6,700+ Pump.fun deployers by reputation, score 47,000+ early-buyer wallets, detect multi-KOL coordination, run server-side copy-trade rules, and stream every DEX trade. Free tier: 200 requests/day at [madeonsol.com/pricing](https://madeonsol.com/pricing) — no credit card required.
+> Real-time Solana trading intelligence: track 1,000+ KOL wallets with <3s latency, score 23,000+ Pump.fun deployers by reputation, score 1M+ early-buyer wallets, detect multi-KOL coordination, run server-side copy-trade rules, and stream every DEX trade. Free tier: 200 requests/day at [madeonsol.com/pricing](https://madeonsol.com/pricing) — no credit card required.
 
 > **New in 1.7.1** *(2026-05-13)* — Velocity field shape corrected to match the API: `mc_change_pct`, `volume_usd`, `mev_volume_pct` are top-level on the token response, each keyed by `5m`/`15m`/`1h`/`2h`/`4h`. The 1.7.0 README documented a `velocity[window]` shape that didn't match the wire format. Runtime is unchanged — fix is to typed shape + docs.
 >
@@ -107,7 +107,7 @@ console.log(rest.lastRateLimit); // { limit, remaining, reset, requestId }
 
 ### Alpha wallet intelligence
 
-Scored from 47,000+ early-buyer records (wallets seen in the first 20 buyers of Pump.fun tokens).
+Scored from 1M+ early-buyer records (wallets seen in the first 20 buyers of Pump.fun tokens).
 
 | Method | Tier | Description |
 |---|---|---|
