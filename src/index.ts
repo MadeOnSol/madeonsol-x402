@@ -82,6 +82,18 @@ import type {
   CoordinationHistoryParams,
 } from "./types.js";
 
+import { MadeOnSolStream } from "./stream.js";
+import type { StreamClientOptions } from "./stream.js";
+
+export { MadeOnSolStream } from "./stream.js";
+export type {
+  StreamClientOptions,
+  StreamChannel,
+  StreamEventName,
+  StreamEvent,
+  StreamLifecycleEvent,
+} from "./stream.js";
+
 export type {
   KolTrade,
   KolStrategy,
@@ -235,8 +247,9 @@ const DEFAULT_BASE_URL = "https://madeonsol.com";
 type AuthMode = "madeonsol" | "x402";
 
 function resolveAuthHeaders(mode: AuthMode, key: string): Record<string, string> {
-  if (mode === "madeonsol") return { Authorization: `Bearer ${key}` };
-  return {};
+  const h: Record<string, string> = { "User-Agent": "madeonsol-x402/1.9.0" };
+  if (mode === "madeonsol") h.Authorization = `Bearer ${key}`;
+  return h;
 }
 
 /* ── Main client options ── */
@@ -575,6 +588,19 @@ export class MadeOnSolREST {
   /** Generate a 24h WebSocket streaming token. */
   async getStreamToken(): Promise<StreamToken> {
     return this.request("POST", "/stream/token");
+  }
+
+  /**
+   * Open a managed real-time WebSocket stream. Handles token fetch + refresh,
+   * auto-reconnect with backoff, heartbeat liveness, and typed events for you.
+   *
+   * @example
+   * const stream = client.stream();
+   * stream.on("kol:trade", (t) => console.log(t));
+   * stream.subscribe(["kol:trades", "deployer:alerts"]);
+   */
+  stream(opts?: Omit<StreamClientOptions, "getToken">): MadeOnSolStream {
+    return new MadeOnSolStream({ ...opts, getToken: () => this.getStreamToken() });
   }
 
   /**

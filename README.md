@@ -294,6 +294,20 @@ const token = await rest.getStreamToken();
 // token.dex_ws_url   — all-DEX trade stream (Ultra only)
 ```
 
+### Managed streaming client *(new in 1.10)*
+
+`rest.stream()` handles the token fetch + 24h refresh, auto-reconnect (backoff + jitter), heartbeat liveness, and typed events — just subscribe and listen.
+
+```ts
+const stream = rest.stream();
+stream.on("kol:trade", (t) => console.log(t.token_symbol, t.action));
+stream.on("deployer:alert", (a) => console.log("new deploy", a.token_mint));
+stream.subscribe(["kol:trades", "deployer:alerts"]);
+// stream.unsubscribe([...]) / stream.close() when done
+```
+
+Channels: `kol:trades`, `kol:coordination`, `kol:first_touches`, `deployer:alerts`, `wallet_tracker:events`, `copytrade:signals`, `price_alert:events`, `sniper:deploys`. Lifecycle events: `open`, `close`, `reconnect`, `heartbeat`, `error`. Uses the global `WebSocket` on Node 22+; on Node < 22 also `npm i ws`.
+
 ## DEX Firehose (Ultra)
 
 Connect to `dex_ws_url` and use the multi-subscription protocol — up to **10 named subs per connection**, each with its own `sub_id`, server-side filters, and optional replay from a 500-trade in-memory ring buffer.
