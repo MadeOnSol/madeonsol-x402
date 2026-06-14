@@ -574,12 +574,6 @@ export interface DeployerTrajectoryResponse {
     bonding_rate: number;
     recent_bond_rate: number;
     tier: string;
-    /** v1.11.1 — fraction of the deployer's labeled tokens that ran (peak ≥60min after deploy) vs dumped. */
-    runner_rate?: number | null;
-    /** v1.11.1 — count of labeled tokens behind runner_rate; confidence denominator, gate on ≥3. */
-    labeled_tokens?: number | null;
-    /** v1.11.1 — average minutes from deploy to bond across the deployer's bonded tokens. */
-    avg_time_to_bond_minutes?: number | null;
   };
   trajectory: TrajectoryData;
 }
@@ -851,45 +845,15 @@ export interface TokenBuyerQualityResponse {
   confidence:  BuyerQualityConfidence;
   signal:      BuyerQualitySignal;
   cached_at:   string;
-  /** Returned on all tiers. */
+  /** Present for PRO/ULTRA tiers only. */
   breakdown?: {
     alpha_wallet_count:      number;
     kol_count:               number;
     bundle_buyer_count:      number;
     avg_historical_win_rate: number | null;
     bot_dominated:           boolean;
-    /**
-     * First-20 buyers on the rolling dump-cluster list (wallets whose 5+
-     * recent first-20 appearances are exclusively on tokens that peaked
-     * <15 min after deploy; trailing 42d, refreshed daily). Out-of-sample:
-     * 3+ such wallets predicted a sub-15-min peak 94% of the time vs 61%
-     * base. Informational — does not move the score.
-     */
-    dump_cluster_count:        number;
-    /**
-     * First-20 buyers with 5+ recent first-20 appearances of any kind.
-     * Alone it predicts nothing; a heavily recycled cohort with
-     * dump_cluster_count 0 historically leans runner.
-     */
-    recycled_early_buyer_count: number;
   };
   note?: string;
-}
-
-/* ── Graduation events (token:graduations WS channel) ── */
-
-/** Payload of a `token:graduation` event — every pump.fun graduation
- * (bonding curve complete → PumpSwap migration), tracked deployer or not. */
-export interface GraduationEvent {
-  token_mint:           string;
-  token_name:           string | null;
-  token_symbol:         string | null;
-  time_to_bond_minutes: number | null;
-  deployer_wallet:      string | null;
-  /** 'unranked' when the deployer is unknown to deployer-hunter. */
-  deployer_tier:        string;
-  market_cap_usd:       number | null;
-  bonded_at:            string;
 }
 
 /* ── Copy-trade ── */
@@ -1237,19 +1201,6 @@ export interface CoordinationHistoryParams {
   min_score?: number;
 }
 
-// ─── /token/{mint} + /token/batch response (v1.12) ────────────────────────
-
-/** Per-mint snapshot returned by GET /token/{mint} and POST /token/batch. */
-export interface TokenResponseBody {
-  /** v1.12 — ratio of liquidity USD to market cap USD; null when either is unknown. */
-  liquidity_to_mc_ratio?: number | null;
-  /** v1.12 — SOL raised in the token's launch cohort (first-N buyers). */
-  launch_cohort_sol?: number | null;
-  /** v1.12 — number of wallets in the launch cohort (0–20). */
-  launch_cohort_size?: number;
-  [key: string]: unknown;
-}
-
 // ─── /me — v1.7 ──────────────────────────────────────────────────────────────
 
 export type ApiTier = "BASIC" | "TRADER" | "PRO" | "ULTRA";
@@ -1321,12 +1272,6 @@ export interface TokensListParams {
   mc_change_1h_min_pct?: number;
   /** Computed (post-filter): max 1h MC change %. */
   mc_change_1h_max_pct?: number;
-  /** v1.12 — minimum liquidity-to-MC ratio (0-1). */
-  min_liq_mc_ratio?:     number;
-  /** v1.12 — maximum liquidity-to-MC ratio (0-1). */
-  max_liq_mc_ratio?:     number;
-  /** v1.12 — filter by deployer tier. */
-  deployer_tier?:        "elite" | "good" | "moderate" | "rising" | "cold" | "unranked";
   sort?:                 TokenListSort;
   limit?:                number;
   offset?:               number;
@@ -1349,10 +1294,6 @@ export interface TokenSummary {
   mc_change_1h_pct:       number | null;
   organic_volume_1h_usd:  number | null;
   mev_share_pct:          number | null;
-  /** v1.12 — ratio of liquidity USD to market cap USD; null when either is unknown. */
-  liquidity_to_mc_ratio?: number | null;
-  /** v1.12 — deployer tier for this token's deployer; null when deployer is untracked. */
-  deployer_tier?:         string | null;
 }
 
 export interface TokensListResponse {
