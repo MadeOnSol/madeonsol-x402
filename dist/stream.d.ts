@@ -11,9 +11,9 @@
  */
 import type { StreamToken } from "./types";
 /** Channels you can subscribe to. */
-export type StreamChannel = "kol:trades" | "kol:coordination" | "kol:first_touches" | "deployer:alerts" | "wallet_tracker:events" | "copytrade:signals" | "price_alert:events" | "sniper:deploys";
+export type StreamChannel = "kol:trades" | "kol:coordination" | "kol:first_touches" | "deployer:alerts" | "wallet_tracker:events" | "copytrade:signals" | "price_alert:events" | "sniper:deploys" | "token:graduations";
 /** Event names delivered on those channels (subscribe to a channel, receive these). */
-export type StreamEventName = "kol:trade" | "kol:coordination" | "kol:first_touch" | "deployer:alert" | "deployer:bond" | "wallet_tracker:event" | "copytrade:signal" | "price_alert:dip" | "price_alert:recovery" | "sniper:deploy";
+export type StreamEventName = "kol:trade" | "kol:coordination" | "kol:first_touch" | "deployer:alert" | "deployer:bond" | "wallet_tracker:event" | "copytrade:signal" | "price_alert:dip" | "price_alert:recovery" | "sniper:deploy" | "token:graduation";
 /** Lifecycle events you can also listen for. */
 export type StreamLifecycleEvent = "open" | "close" | "reconnect" | "subscribed" | "heartbeat" | "error";
 export interface StreamEvent<T = unknown> {
