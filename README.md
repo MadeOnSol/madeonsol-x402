@@ -9,7 +9,13 @@
 
 TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligence API.
 
-> Real-time Solana trading intelligence: track 1,069 KOL wallets with <3s latency, score 23,000+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1M+ early-buyer wallets, and stream every DEX trade. Free tier: 200 requests/day at [madeonsol.com/pricing](https://madeonsol.com/pricing) — no credit card required.
+> Real-time Solana trading intelligence: track 1,069 KOL wallets with <3s latency, score 23,000+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1M+ early-buyer wallets (incl. dump-cluster detection), push every pump.fun graduation, and stream every DEX trade. Free tier: 200 requests/day at [madeonsol.com/pricing](https://madeonsol.com/pricing) — no credit card required.
+
+> **New in 1.12.0** — `/token/{mint}` and `/token/batch` responses now include `liquidity_to_mc_ratio`, `launch_cohort_sol`, and `launch_cohort_size`. `/tokens` gains three new filter params: `min_liq_mc_ratio`, `max_liq_mc_ratio`, and `deployer_tier`. `/tokens` list items now include `liquidity_to_mc_ratio` and `deployer_tier`. `/kol/leaderboard` entries now include `median_hold_minutes_30d` and `percentile_early_entry_30d`.
+>
+> **New in 1.11.1** — Deployer profiles now carry `runner_rate` + `labeled_tokens` (fraction of a deployer's labeled tokens that ran vs dumped, gate on `labeled_tokens` ≥3) plus `avg_time_to_bond_minutes`, on `DeployerAlert.deployers` and the deployer-trajectory profile.
+>
+> **New in 1.11** — **Graduation events + dump-cluster detection.** Subscribe `token:graduations` for every pump.fun bond in real time (tracked deployer or not, typed `GraduationEvent`). Buyer-quality `breakdown` adds `dump_cluster_count` (out-of-sample: 3+ → 94% dump vs 61% base) + `recycled_early_buyer_count`. DEX firehose: replay buffer deepened to ~5 min; mint-scoped subs get in-band `dex:graduations` frames.
 
 > **New in 1.10** — **Deshred Sniper.** `rest.sniper_recent()` — deshred deploy feed ~500ms before on-chain confirmation. PRO: elite/good. ULTRA: all tiers + watchlist. Use `sniper:deploys` WebSocket for push.
 >
@@ -19,7 +25,7 @@ TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligenc
 >
 > **New in 1.7.1** *(2026-05-13)* — Velocity field shape corrected to match the API: `mc_change_pct`, `volume_usd`, `mev_volume_pct` are top-level on the token response, each keyed by `5m`/`15m`/`1h`/`2h`/`4h`. The 1.7.0 README documented a `velocity[window]` shape that didn't match the wire format. Runtime is unchanged — fix is to typed shape + docs.
 >
-> **New in 1.7.0** *(2026-05-12)* — **Token directory + account inspection.** `client.tokensList({ min_liq, min_volume_1h_usd, max_mev_share_pct, mc_change_1h_min_pct, sort, ... })` filters every active mint by MC band, liquidity floor, primary DEX, authority/safety flags, computed 1h volume, MEV-share ceiling, and MC-change deltas. Default `min_liq=2000` skips phantom-MC dust; pass `min_liq=0` to opt out. `client.me()` — read your tier, daily/burst quota state, and per-feature usage in one call (no header parsing). Velocity / MEV-share fields added to every token response: `mc_change_pct`, `volume_usd`, `mev_volume_pct` (each keyed by `5m`/`15m`/`1h`/`2h`/`4h`) plus `history_age_seconds`. `/token/{mint}` 400s now ship structured `code`, `reason`, `received_length`, `example`, and `docs` — stop guessing why a mint failed. Deprecated `avg_entry_mc_usd` fully removed.
+> **New in 1.7.0** *(2026-05-12)* — **Token directory + account inspection.** `client.tokensList({ min_liq, min_volume_1h_usd, max_mev_share_pct, mc_change_1h_min_pct, sort, min_liq_mc_ratio, max_liq_mc_ratio, deployer_tier, ... })` filters every active mint by MC band, liquidity floor, primary DEX, authority/safety flags, computed 1h volume, MEV-share ceiling, MC-change deltas, liq/MC ratio, and deployer tier. Response items now include `liquidity_to_mc_ratio` and `deployer_tier`. Default `min_liq=2000` skips phantom-MC dust; pass `min_liq=0` to opt out. `client.me()` — read your tier, daily/burst quota state, and per-feature usage in one call (no header parsing). Velocity / MEV-share fields added to every token response: `mc_change_pct`, `volume_usd`, `mev_volume_pct` (each keyed by `5m`/`15m`/`1h`/`2h`/`4h`) plus `history_age_seconds`. `/token/{mint}` 400s now ship structured `code`, `reason`, `received_length`, `example`, and `docs` — stop guessing why a mint failed. Deprecated `avg_entry_mc_usd` fully removed.
 
 ## Quick start (10 seconds)
 
@@ -306,11 +312,11 @@ stream.subscribe(["kol:trades", "deployer:alerts"]);
 // stream.unsubscribe([...]) / stream.close() when done
 ```
 
-Channels: `kol:trades`, `kol:coordination`, `kol:first_touches`, `deployer:alerts`, `wallet_tracker:events`, `copytrade:signals`, `price_alert:events`, `sniper:deploys`. Lifecycle events: `open`, `close`, `reconnect`, `heartbeat`, `error`. Uses the global `WebSocket` on Node 22+; on Node < 22 also `npm i ws`.
+Channels: `kol:trades`, `kol:coordination`, `kol:first_touches`, `deployer:alerts`, `wallet_tracker:events`, `copytrade:signals`, `price_alert:events`, `sniper:deploys`, `token:graduations` (every pump.fun graduation in real time, tracked deployer or not — typed `GraduationEvent`). Lifecycle events: `open`, `close`, `reconnect`, `heartbeat`, `error`. Uses the global `WebSocket` on Node 22+; on Node < 22 also `npm i ws`.
 
 ## DEX Firehose (Ultra)
 
-Connect to `dex_ws_url` and use the multi-subscription protocol — up to **10 named subs per connection**, each with its own `sub_id`, server-side filters, and optional replay from a 500-trade in-memory ring buffer.
+Connect to `dex_ws_url` and use the multi-subscription protocol — up to **10 named subs per connection**, each with its own `sub_id`, server-side filters, and optional replay (up to 500 most recent matching trades) from a server-side buffer holding ~5 minutes of firehose history — it backfills trades from before your connection existed. Replayed trades arrive newest-first flagged `"replay": true`, then a `replay_done` frame; sort by `block_time` client-side.
 
 ```ts
 import WebSocket from "ws";
