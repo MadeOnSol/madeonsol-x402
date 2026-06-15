@@ -34,6 +34,7 @@ import type {
   AlphaLinkedResponse,
   TokenCapTableResponse,
   TokenBuyerQualityResponse,
+  TokenRiskResponse,
   CopyTradeSubscription,
   CopyTradeCreateParams,
   CopyTradeCreateResponse,
@@ -160,6 +161,11 @@ export type {
   CapTableSummary,
   TokenCapTableResponse,
   TokenBuyerQualityResponse,
+  TokenRiskBand,
+  TokenRiskStatus,
+  TokenRiskFactor,
+  TokenRiskInputs,
+  TokenRiskResponse,
   CopyTradeAction,
   CopyTradeSizingMode,
   CopyTradeDeliveryMode,
@@ -658,6 +664,16 @@ export class MadeOnSolREST {
   /** 0–100 buyer-quality score for a token's first-buyer cohort. 5-min cached. */
   async tokenBuyerQuality(mint: string): Promise<TokenBuyerQualityResponse> {
     return this.request("GET", `/tokens/${encodeURIComponent(mint)}/buyer-quality`);
+  }
+
+  /**
+   * Transparent 0–100 token rug-risk/safety score (higher = riskier). Returns a
+   * `band` (safe/caution/danger), an explainable `factors` array, and the raw
+   * `inputs` (authorities, liquidity, transfer fee, launch cohort, deployer bond
+   * rate, KOL signal, blacklist). PRO/ULTRA only — BASIC receives HTTP 403.
+   */
+  async tokenRisk(mint: string): Promise<TokenRiskResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/risk`);
   }
 
   /* ── Copy-Trade (PRO/ULTRA) ── */

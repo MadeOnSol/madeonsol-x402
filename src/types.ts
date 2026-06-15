@@ -876,6 +876,47 @@ export interface TokenBuyerQualityResponse {
   note?: string;
 }
 
+/* ── Token risk score (v1.13) ── */
+
+export type TokenRiskBand   = "safe" | "caution" | "danger";
+export type TokenRiskStatus = "ok" | "warn" | "danger";
+
+export interface TokenRiskFactor {
+  key:    string;
+  label:  string;
+  status: TokenRiskStatus;
+  points: number;
+  detail: string;
+}
+
+export interface TokenRiskInputs {
+  mint_authority_revoked:   boolean | null;
+  freeze_authority_revoked: boolean | null;
+  liquidity_usd:            number | null;
+  liquidity_to_mc_ratio:    number | null;
+  transfer_fee_bps:         number | null;
+  is_token_2022:            boolean | null;
+  burn_detected:            boolean | null;
+  launch_cohort_sol:        number | null;
+  launch_cohort_size:       number | null;
+  deployer_bonding_rate:    number | null;
+  deployer_total_deployed:  number | null;
+  kol_signal:               string | null;
+  is_blacklisted:           boolean | null;
+  [key: string]: unknown;
+}
+
+/** Transparent 0–100 token rug-risk/safety score (higher = riskier). PRO/ULTRA only. */
+export interface TokenRiskResponse {
+  mint:          string;
+  risk_score:    number;
+  band:          TokenRiskBand;
+  factors:       TokenRiskFactor[];
+  inputs:        TokenRiskInputs;
+  score_version: string;
+  as_of:         string;
+}
+
 /* ── Graduation events (token:graduations WS channel) ── */
 
 /** Payload of a `token:graduation` event — every pump.fun graduation
