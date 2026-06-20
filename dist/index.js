@@ -169,6 +169,26 @@ export class MadeOnSolX402 {
     async peakHistory(mint) {
         return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/peak-history`);
     }
+    /** Token rug/safety score (0–100) with a per-factor breakdown — the "is this safe to buy?" call. */
+    async tokenRisk(mint) {
+        return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/risk`);
+    }
+    /** Early-buyer quality score (dump-cluster exposure, recycled wallets, smart money) + live Signal Scorecard efficacy. */
+    async tokenBuyerQuality(mint) {
+        return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/buyer-quality`);
+    }
+    /** Live token snapshot — price, market cap, FDV, liquidity, primary DEX, KOL buyer activity. */
+    async token(mint) {
+        return this.request(`/api/x402/token/${encodeURIComponent(mint)}`);
+    }
+    /** Signal Scorecard — out-of-sample, machine-readable reliability for a named signal. `history` adds the per-day drift series. */
+    async signalPerformance(name, params) {
+        return this.request(`/api/x402/signals/${encodeURIComponent(name)}/performance`, params?.history ? { history: "true" } : undefined);
+    }
+    /** Free — catalog of available signals (name, methodology, performance endpoint). */
+    async signals() {
+        return this.request("/api/x402/signals");
+    }
     /** Free discovery endpoint — lists all available endpoints and prices. */
     async discovery() {
         const res = await fetch(new URL("/api/x402", this.baseUrl).toString());
@@ -332,6 +352,48 @@ export class MadeOnSolREST {
     /** 0–100 buyer-quality score for a token's first-buyer cohort. 5-min cached. */
     async tokenBuyerQuality(mint) {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/buyer-quality`);
+    }
+    /**
+     * Transparent 0–100 token rug-risk/safety score (higher = riskier). Returns a
+     * `band` (safe/caution/danger), an explainable `factors` array, and the raw
+     * `inputs` (authorities, liquidity, transfer fee, launch cohort, deployer bond
+     * rate, KOL signal, blacklist). PRO/ULTRA only — BASIC receives HTTP 403.
+     */
+    async tokenRisk(mint) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/risk`);
+    }
+    /**
+     * 1-minute-derived OHLC candles for a token. `tf` selects the timeframe
+     * (1m/5m/15m/1h/4h/1d, default 1h); `limit` (1–1000, default 200) and the
+     * `from`/`to` ISO 8601 bounds page the range. PRO returns OHLCV for the last
+     * 30 days; ULTRA adds net flow (buy/sell volume, `net_volume_usd`, trade
+     * counts, MEV volume), liquidity delta, and full history — signalled by
+     * `net_flow_included`. PRO/ULTRA only — BASIC receives HTTP 403.
+     */
+    async tokenCandles(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/candles`, undefined, params);
+    }
+    /**
+     * Live token snapshot — price (USD/SOL), VWAP, market cap, FDV, liquidity,
+     * liquidity-to-MC ratio, primary DEX + pool, Token-2022 / transfer-fee flags,
+     * and a `top_buyers` array ({ name, sol_amount }). Returns `{ token: {...} }`.
+     */
+    async token(mint) {
+        return this.request("GET", `/token/${encodeURIComponent(mint)}`);
+    }
+    /**
+     * Signal Scorecard — out-of-sample reliability for a named signal. Returns
+     * `buckets` (each with hit_rate, base_rate, lift, sample_n, window_days,
+     * test_from/test_to) plus the signal, metric_type, outcome, methodology, and
+     * as_of. Pass `{ history: true }` to also get a per-day `series`. Valid names:
+     * dump_cluster_count, runner_rate, recycled_early_buyer_count, coordination_count.
+     */
+    async signalPerformance(name, params) {
+        return this.request("GET", `/signals/${encodeURIComponent(name)}/performance`, undefined, params?.history ? { history: "true" } : undefined);
+    }
+    /** Free signals catalog — name, description, the available signals with methodology + performance_endpoint, and docs. No payment required. */
+    async signals() {
+        return this.request("GET", "/signals");
     }
     /* ── Copy-Trade (PRO/ULTRA) ── */
     /** List your copy-trade rules. */

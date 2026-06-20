@@ -11,6 +11,8 @@ TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligenc
 
 > Real-time Solana trading intelligence: track 1,069 KOL wallets with <3s latency, score 23,000+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1M+ early-buyer wallets (incl. dump-cluster detection), push every pump.fun graduation, and stream every DEX trade. Free tier: 200 requests/day at [madeonsol.com/pricing](https://madeonsol.com/pricing) — no credit card required.
 
+> **New in 1.15.0** — **Live token snapshot + Signal Scorecard.** `rest.token(mint)` returns a live snapshot — price (USD/SOL), VWAP, market cap, FDV, liquidity, liquidity-to-MC ratio, primary DEX + pool, Token-2022 / transfer-fee flags, and a `top_buyers[]` array (typed `TokenSnapshotResponse`). `rest.signalPerformance(name, { history? })` returns the **Signal Scorecard** — out-of-sample reliability buckets (hit_rate, base_rate, lift, sample_n, window_days) for `dump_cluster_count`, `runner_rate`, `recycled_early_buyer_count`, or `coordination_count`, with a per-day `series` when `history: true` (typed `SignalPerformanceResponse`). `rest.signals()` is the free catalog of all scored signals (typed `SignalsCatalogResponse`). `rest.tokenRisk(mint)` and `rest.tokenBuyerQuality(mint)` are now fully live server-side.
+>
 > **New in 1.13.0** — **Token risk score.** `rest.tokenRisk(mint)` returns a transparent 0–100 rug-risk/safety score (higher = riskier) with a `band` (safe/caution/danger), an explainable `factors[]` array, and the raw `inputs` (mint/freeze authority, liquidity, liq-to-MC ratio, transfer fee, launch cohort, deployer bond rate, KOL signal, blacklist). Typed as `TokenRiskResponse`. PRO/ULTRA only.
 >
 > **New in 1.12.0** — `/token/{mint}` and `/token/batch` responses now include `liquidity_to_mc_ratio`, `launch_cohort_sol`, and `launch_cohort_size`. `/tokens` gains three new filter params: `min_liq_mc_ratio`, `max_liq_mc_ratio`, and `deployer_tier`. `/tokens` list items now include `liquidity_to_mc_ratio` and `deployer_tier`. `/kol/leaderboard` entries now include `median_hold_minutes_30d` and `percentile_early_entry_30d`.
@@ -135,9 +137,30 @@ Scored from 1M+ early-buyer records (wallets seen in the first 20 buyers of Pump
 
 | Method | Tier | Description |
 |---|---|---|
+| `rest.token(mint)` | All | **New 1.15** · Live token snapshot — price (USD/SOL), VWAP, market cap, FDV, liquidity, liq-to-MC ratio, primary DEX + pool, Token-2022 / transfer-fee flags, and `top_buyers[]`. Returns `{ token }` |
 | `rest.tokenCapTable(mint)` | PRO+ | First non-deployer early buyers, enriched with PnL/KOL/bot flags. PRO=10, ULTRA=20 |
-| `rest.tokenBuyerQuality(mint)` | All | 0–100 buyer-quality score + full breakdown (5-min cached) |
-| `rest.tokenRisk(mint)` | PRO+ | Transparent 0–100 rug-risk/safety score with `band`, explainable `factors[]`, and raw `inputs` |
+| `rest.tokenBuyerQuality(mint)` | All | 0–100 buyer-quality score + full breakdown (5-min cached). Live server-side |
+| `rest.tokenRisk(mint)` | PRO+ | Transparent 0–100 rug-risk/safety score with `band`, explainable `factors[]`, and raw `inputs`. Live server-side |
+| `rest.tokenCandles(mint, params?)` | PRO+ | OHLC candles. PRO = OHLCV, last 30 days; ULTRA = + net flow (buy/sell volume, `net_volume_usd`, counts, MEV vol), liquidity delta, full history |
+
+**tokenCandles params** — `tf` ("1m" \| "5m" \| "15m" \| "1h" \| "4h" \| "1d", default "1h"), `limit` (1–1000, default 200), `from` (ISO 8601), `to` (ISO 8601)
+
+### Signal Scorecard *(new in 1.15)*
+
+Out-of-sample reliability for the scored early-buyer / coordination signals — every claim is backed by a hit-rate vs base-rate measurement so you can size positions on evidence, not vibes.
+
+| Method | Tier | Description |
+|---|---|---|
+| `rest.signals()` | All (free) | Catalog of scored signals — name, methodology, and each signal's `performance_endpoint`. No payment required |
+| `rest.signalPerformance(name, params?)` | All | Signal Scorecard for one signal — `buckets[]` (hit_rate, base_rate, lift, sample_n, window_days, test_from/test_to) + metric_type, outcome, methodology, as_of. Pass `{ history: true }` for a per-day `series[]` |
+
+Valid signal names: `dump_cluster_count`, `runner_rate`, `recycled_early_buyer_count`, `coordination_count`.
+
+```ts
+const { signals } = await rest.signals();
+const scorecard = await rest.signalPerformance("dump_cluster_count", { history: true });
+console.log(scorecard.buckets);  // [{ bucket, hit_rate, base_rate, lift, sample_n, ... }]
+```
 
 ### KOL coordination alerts (v1.1 — push signals)
 

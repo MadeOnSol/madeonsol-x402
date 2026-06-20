@@ -788,6 +788,90 @@ export interface TokenBuyerQualityResponse {
     };
     note?: string;
 }
+export type TokenRiskBand = "safe" | "caution" | "danger";
+export type TokenRiskStatus = "ok" | "warn" | "danger";
+export interface TokenRiskFactor {
+    key: string;
+    label: string;
+    status: TokenRiskStatus;
+    points: number;
+    detail: string;
+}
+export interface TokenRiskInputs {
+    mint_authority_revoked: boolean | null;
+    freeze_authority_revoked: boolean | null;
+    liquidity_usd: number | null;
+    liquidity_to_mc_ratio: number | null;
+    transfer_fee_bps: number | null;
+    is_token_2022: boolean | null;
+    burn_detected: boolean | null;
+    launch_cohort_sol: number | null;
+    launch_cohort_size: number | null;
+    deployer_bonding_rate: number | null;
+    deployer_total_deployed: number | null;
+    kol_signal: string | null;
+    is_blacklisted: boolean | null;
+    [key: string]: unknown;
+}
+/** Transparent 0–100 token rug-risk/safety score (higher = riskier). PRO/ULTRA only. */
+export interface TokenRiskResponse {
+    mint: string;
+    risk_score: number;
+    band: TokenRiskBand;
+    factors: TokenRiskFactor[];
+    inputs: TokenRiskInputs;
+    score_version: string;
+    as_of: string;
+}
+export type CandleTimeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+export interface CandlesParams {
+    /** Candle timeframe. Default "1h". */
+    tf?: CandleTimeframe;
+    /** Number of candles to return (1–1000). Default 200. */
+    limit?: number;
+    /** ISO 8601 start of range (inclusive). */
+    from?: string;
+    /** ISO 8601 end of range (inclusive). */
+    to?: string;
+}
+/**
+ * One OHLC bucket. The `t`…`market_cap_usd` fields are present on all tiers
+ * (PRO = OHLCV, last 30 days). The remaining fields are ULTRA-only and present
+ * when the response's `net_flow_included` is true (buy/sell volume + net flow,
+ * trade counts, MEV volume, liquidity delta, MC band).
+ */
+export interface Candle {
+    /** ISO 8601 bucket start. */
+    t: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume_usd: number;
+    trades: number;
+    market_cap_usd: number | null;
+    buy_volume_usd?: number | null;
+    sell_volume_usd?: number | null;
+    net_volume_usd?: number | null;
+    buy_count?: number | null;
+    sell_count?: number | null;
+    volume_mev_usd?: number | null;
+    open_liquidity_usd?: number | null;
+    close_liquidity_usd?: number | null;
+    high_mc_usd?: number | null;
+    low_mc_usd?: number | null;
+}
+/** 1-minute-derived OHLC candles for a token. PRO/ULTRA only. */
+export interface CandlesResponse {
+    mint: string;
+    timeframe: string;
+    from: string;
+    to: string;
+    count: number;
+    /** True when ULTRA net-flow/liquidity fields are populated on each candle. */
+    net_flow_included: boolean;
+    candles: Candle[];
+}
 /** Payload of a `token:graduation` event — every pump.fun graduation
  * (bonding curve complete → PumpSwap migration), tracked deployer or not. */
 export interface GraduationEvent {
@@ -1088,6 +1172,78 @@ export interface CoordinationHistoryParams {
     limit?: number;
     since?: string;
     min_score?: number;
+}
+/** One of the token's top buyers, as returned in TokenSnapshot.top_buyers. */
+export interface TokenSnapshotTopBuyer {
+    name: string;
+    sol_amount: number;
+}
+/** Live token snapshot returned in the `token` field of GET /token/{mint}. */
+export interface TokenSnapshot {
+    mint?: string;
+    symbol?: string | null;
+    name?: string | null;
+    price_usd: number | null;
+    price_sol: number | null;
+    vwap_usd?: number | null;
+    market_cap: number | null;
+    fdv_usd: number | null;
+    liquidity_usd: number | null;
+    liquidity_to_mc_ratio: number | null;
+    primary_dex: string | null;
+    primary_pool_address: string | null;
+    is_token_2022: boolean | null;
+    transfer_fee_bps: number | null;
+    top_buyers: TokenSnapshotTopBuyer[];
+}
+/** Response of GET /token/{mint} — live token snapshot. */
+export interface TokenSnapshotResponse {
+    token: TokenSnapshot;
+}
+/** Valid signal names accepted by GET /signals/{name}/performance. */
+export type SignalName = "dump_cluster_count" | "runner_rate" | "recycled_early_buyer_count" | "coordination_count";
+/** One out-of-sample reliability bucket within a Signal Scorecard. */
+export interface SignalPerformanceBucket {
+    bucket: string;
+    hit_rate: number | null;
+    base_rate: number | null;
+    lift: number | null;
+    sample_n: number | null;
+    window_days: number | null;
+    test_from: string | null;
+    test_to: string | null;
+}
+/** One per-day reliability point, returned in `series` when history=true. */
+export interface SignalPerformanceSeriesPoint {
+    date: string;
+    hit_rate: number | null;
+    base_rate: number | null;
+    lift: number | null;
+    sample_n: number | null;
+}
+/** Response of GET /signals/{name}/performance — the Signal Scorecard. */
+export interface SignalPerformanceResponse {
+    signal: string;
+    metric_type: string;
+    outcome: string;
+    methodology: string;
+    as_of: string;
+    buckets: SignalPerformanceBucket[];
+    /** Per-day reliability series — only present when called with `history: true`. */
+    series?: SignalPerformanceSeriesPoint[];
+}
+/** One entry in the signals catalog returned by GET /signals. */
+export interface SignalsCatalogEntry {
+    name: string;
+    methodology: string;
+    performance_endpoint: string;
+}
+/** Response of GET /signals — the free signals catalog. */
+export interface SignalsCatalogResponse {
+    name: string;
+    description: string;
+    signals: SignalsCatalogEntry[];
+    docs: string;
 }
 /** Per-mint snapshot returned by GET /token/{mint} and POST /token/batch. */
 export interface TokenResponseBody {

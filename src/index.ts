@@ -35,6 +35,8 @@ import type {
   TokenCapTableResponse,
   TokenBuyerQualityResponse,
   TokenRiskResponse,
+  CandlesParams,
+  CandlesResponse,
   CopyTradeSubscription,
   CopyTradeCreateParams,
   CopyTradeCreateResponse,
@@ -81,6 +83,9 @@ import type {
   KolConsensusResponse,
   PeakHistoryResponse,
   CoordinationHistoryParams,
+  TokenSnapshotResponse,
+  SignalPerformanceResponse,
+  SignalsCatalogResponse,
 } from "./types.js";
 
 import { MadeOnSolStream } from "./stream.js";
@@ -166,6 +171,10 @@ export type {
   TokenRiskFactor,
   TokenRiskInputs,
   TokenRiskResponse,
+  CandleTimeframe,
+  CandlesParams,
+  Candle,
+  CandlesResponse,
   CopyTradeAction,
   CopyTradeSizingMode,
   CopyTradeDeliveryMode,
@@ -244,6 +253,15 @@ export type {
   KolConsensusResponse,
   PeakHistoryResponse,
   CoordinationHistoryParams,
+  TokenSnapshotTopBuyer,
+  TokenSnapshot,
+  TokenSnapshotResponse,
+  SignalName,
+  SignalPerformanceBucket,
+  SignalPerformanceSeriesPoint,
+  SignalPerformanceResponse,
+  SignalsCatalogEntry,
+  SignalsCatalogResponse,
 } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://madeonsol.com";
@@ -461,6 +479,34 @@ export class MadeOnSolX402 {
     return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/peak-history`);
   }
 
+  /** Token rug/safety score (0–100) with a per-factor breakdown — the "is this safe to buy?" call. */
+  async tokenRisk(mint: string): Promise<TokenRiskResponse> {
+    return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/risk`);
+  }
+
+  /** Early-buyer quality score (dump-cluster exposure, recycled wallets, smart money) + live Signal Scorecard efficacy. */
+  async tokenBuyerQuality(mint: string): Promise<TokenBuyerQualityResponse> {
+    return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/buyer-quality`);
+  }
+
+  /** Live token snapshot — price, market cap, FDV, liquidity, primary DEX, KOL buyer activity. */
+  async token(mint: string): Promise<TokenSnapshotResponse> {
+    return this.request(`/api/x402/token/${encodeURIComponent(mint)}`);
+  }
+
+  /** Signal Scorecard — out-of-sample, machine-readable reliability for a named signal. `history` adds the per-day drift series. */
+  async signalPerformance(name: string, params?: { history?: boolean }): Promise<SignalPerformanceResponse> {
+    return this.request(
+      `/api/x402/signals/${encodeURIComponent(name)}/performance`,
+      params?.history ? { history: "true" } : undefined,
+    );
+  }
+
+  /** Free — catalog of available signals (name, methodology, performance endpoint). */
+  async signals(): Promise<SignalsCatalogResponse> {
+    return this.request("/api/x402/signals");
+  }
+
   /** Free discovery endpoint — lists all available endpoints and prices. */
   async discovery(): Promise<DiscoveryResponse> {
     const res = await fetch(new URL("/api/x402", this.baseUrl).toString());
@@ -674,6 +720,44 @@ export class MadeOnSolREST {
    */
   async tokenRisk(mint: string): Promise<TokenRiskResponse> {
     return this.request("GET", `/tokens/${encodeURIComponent(mint)}/risk`);
+  }
+
+  /**
+   * 1-minute-derived OHLC candles for a token. `tf` selects the timeframe
+   * (1m/5m/15m/1h/4h/1d, default 1h); `limit` (1–1000, default 200) and the
+   * `from`/`to` ISO 8601 bounds page the range. PRO returns OHLCV for the last
+   * 30 days; ULTRA adds net flow (buy/sell volume, `net_volume_usd`, trade
+   * counts, MEV volume), liquidity delta, and full history — signalled by
+   * `net_flow_included`. PRO/ULTRA only — BASIC receives HTTP 403.
+   */
+  async tokenCandles(mint: string, params?: CandlesParams): Promise<CandlesResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/candles`, undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /**
+   * Live token snapshot — price (USD/SOL), VWAP, market cap, FDV, liquidity,
+   * liquidity-to-MC ratio, primary DEX + pool, Token-2022 / transfer-fee flags,
+   * and a `top_buyers` array ({ name, sol_amount }). Returns `{ token: {...} }`.
+   */
+  async token(mint: string): Promise<TokenSnapshotResponse> {
+    return this.request("GET", `/token/${encodeURIComponent(mint)}`);
+  }
+
+  /**
+   * Signal Scorecard — out-of-sample reliability for a named signal. Returns
+   * `buckets` (each with hit_rate, base_rate, lift, sample_n, window_days,
+   * test_from/test_to) plus the signal, metric_type, outcome, methodology, and
+   * as_of. Pass `{ history: true }` to also get a per-day `series`. Valid names:
+   * dump_cluster_count, runner_rate, recycled_early_buyer_count, coordination_count.
+   */
+  async signalPerformance(name: string, params?: { history?: boolean }): Promise<SignalPerformanceResponse> {
+    return this.request("GET", `/signals/${encodeURIComponent(name)}/performance`, undefined,
+      params?.history ? { history: "true" } : undefined);
+  }
+
+  /** Free signals catalog — name, description, the available signals with methodology + performance_endpoint, and docs. No payment required. */
+  async signals(): Promise<SignalsCatalogResponse> {
+    return this.request("GET", "/signals");
   }
 
   /* ── Copy-Trade (PRO/ULTRA) ── */
