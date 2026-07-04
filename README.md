@@ -9,8 +9,16 @@
 
 TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligence API.
 
-> Real-time Solana trading intelligence: track 1,069 KOL wallets with <3s latency, score 23,000+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1M+ early-buyer wallets (incl. dump-cluster detection), push every pump.fun graduation, and stream every DEX trade. Free tier: 200 requests/day at [madeonsol.com/pricing](https://madeonsol.com/pricing) — no credit card required.
+> Real-time Solana trading intelligence: track 1,069 KOL wallets with <3s latency, score 23,000+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1M+ early-buyer wallets (incl. dump-cluster detection), read bundle-cohort holdings (`held_pct_of_supply` — are the bundlers still holding?), push every pump.fun graduation, and stream every DEX trade. Free tier: 200 requests/day, every endpoint — no signup payment. Get a key at [madeonsol.com/pricing](https://madeonsol.com/pricing).
 
+> **New in 1.19.0** — **Bundle-cohort holdings.** `rest.tokenBundle(mint)` returns the bundle wallets' current position for a token — the "are the bundlers still holding, or did they dump on you?" read. The `bundle` block carries `wallet_count`, `bundle_kind` (`atomic_tx` / `same_slot` / `none`), `held_ratio` (net held / buy volume — churn-sensitive secondary), **`held_pct_of_supply`** (net held / circulating supply — the headline signal; null when supply is unknown), `fully_exited`, `buy_volume`, and `tokens_held` (typed `TokenBundleResponse`). Field-gated by tier: BASIC/TRADER get the `bundle` block only (`wallets: []`); PRO adds the top-10 `wallets` with flags (`has_sold`, `atomic`, `is_kol`); ULTRA returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`, `bot_confidence`, `tokens_held`). All tiers reach it.
+>
+> **New in 1.18.0** — **Batch risk scoring + live stream-session control.** `rest.tokensBatchRisk(mints)` scores up to 50 mints in one call (counts as 1 request) — each entry in `tokens` is either a full risk result (same shape as `rest.tokenRisk(mint)`, plus `as_of`) or `{ mint, error: "not_tracked" }`; untracked mints don't fail the batch, and `tokens` preserves de-duplicated input order (typed `TokenBatchRiskResponse`). PRO/ULTRA only. Plus `rest.streamSessions()` lists your live WebSocket sessions across ws-streaming + dex-stream (typed `StreamSessionsResponse`), and `rest.streamSessionKill(id)` force-releases a slot by id (typed `StreamSessionEvictResponse`) — the self-serve fix for a 4002 lockout when a deploy overlap leaves a ghost socket holding your slot. PRO/ULTRA only.
+>
+> **New in 1.17.0** — **Almost-bonded discovery + trending sorts.** `rest.almostBonded({ min_progress?, max_progress?, min_velocity_pct_per_min?, max_age_minutes?, deployer_tier?, authority_revoked?, min_liq?, sort?, limit? })` returns pre-bond pump.fun tokens near graduation, ranked by velocity (Δprogress/min) — "95% and accelerating" beats "92% stalled". Each token carries `progress_pct`, `velocity_pct_per_min`, `eta_minutes`, `stalled`, `real_sol_reserves`, `market_cap_usd`, `liquidity_usd`, `authorities_revoked`, `deployer_tier`, and `age_minutes` (typed `AlmostBondedResponse`). `sort` is `velocity_desc` (default) / `progress_desc` / `eta_asc`. **KEYED (v1) — requires an `msk_` API key; there is no x402 route.** PRO/ULTRA only. Plus `client.tokensList({ sort })` gains four momentum sorts — `mc_change_5m_desc`, `mc_change_1h_desc`, `volume_1h_desc`, and `trending` (composite recent-volume × positive-momentum rank).
+>
+> **New in 1.16.0** — **Token trade flow.** `client.tokenFlow(mint, { window? })` returns a trade-flow aggregate over a `1h`/`24h` window — `unique_wallets` / `unique_buyers` / `unique_sellers`, `buy_count` / `sell_count` / `total_trades`, `buy_sol` / `sell_sol` / `net_sol`, and a `trades_per_wallet` wash-trading proxy (typed `TokenFlowResponse`). It's an **organic-vs-fake volume** read. **KEYED (v1) — requires an `msk_` API key; there is no x402 route**, so x402-only clients can't reach it. PRO/ULTRA only. Deployer alerts now carry `deployers.deployer_sol_balance` — the deployer wallet's SOL balance at alert time (null for historical rows).
+>
 > **New in 1.15.0** — **Live token snapshot + Signal Scorecard.** `rest.token(mint)` returns a live snapshot — price (USD/SOL), VWAP, market cap, FDV, liquidity, liquidity-to-MC ratio, primary DEX + pool, Token-2022 / transfer-fee flags, and a `top_buyers[]` array (typed `TokenSnapshotResponse`). `rest.signalPerformance(name, { history? })` returns the **Signal Scorecard** — out-of-sample reliability buckets (hit_rate, base_rate, lift, sample_n, window_days) for `dump_cluster_count`, `runner_rate`, `recycled_early_buyer_count`, or `coordination_count`, with a per-day `series` when `history: true` (typed `SignalPerformanceResponse`). `rest.signals()` is the free catalog of all scored signals (typed `SignalsCatalogResponse`). `rest.tokenRisk(mint)` and `rest.tokenBuyerQuality(mint)` are now fully live server-side.
 >
 > **New in 1.13.0** — **Token risk score.** `rest.tokenRisk(mint)` returns a transparent 0–100 rug-risk/safety score (higher = riskier) with a `band` (safe/caution/danger), an explainable `factors[]` array, and the raw `inputs` (mint/freeze authority, liquidity, liq-to-MC ratio, transfer fee, launch cohort, deployer bond rate, KOL signal, blacklist). Typed as `TokenRiskResponse`. PRO/ULTRA only.
@@ -105,6 +113,7 @@ const client = new MadeOnSolX402({
 | `walletPnl(address)` | **New 1.8** · FIFO cost-basis PnL: realized + unrealized SOL, profit factor, drawdown, hold times, daily curve, closed + open positions. **$0.02** |
 | `walletPositions(address)` | **New 1.8** · Open positions only, live unrealized from market-cap tracker. Shares /pnl cache. **$0.01** |
 | `walletTrades(address, params?)` | **New 1.8** · Cursor-paginated raw trades with action / token / since-until filters. **$0.005** |
+| `tokenFlow(mint, params?)` | **New 1.16** · Trade-flow aggregate (organic-vs-fake volume) — unique wallets/buyers/sellers, buy/sell counts + SOL, net SOL, `trades_per_wallet` wash-trading proxy. `window` ("1h" \| "24h", default "1h"). **KEYED (v1) — needs an `msk_` API key, no x402 route.** PRO/ULTRA |
 | `discovery()` | Lists all endpoints, prices, and parameter docs (free) |
 
 ## REST API client
@@ -141,9 +150,20 @@ Scored from 1M+ early-buyer records (wallets seen in the first 20 buyers of Pump
 | `rest.tokenCapTable(mint)` | PRO+ | First non-deployer early buyers, enriched with PnL/KOL/bot flags. PRO=10, ULTRA=20 |
 | `rest.tokenBuyerQuality(mint)` | All | 0–100 buyer-quality score + full breakdown (5-min cached). Live server-side |
 | `rest.tokenRisk(mint)` | PRO+ | Transparent 0–100 rug-risk/safety score with `band`, explainable `factors[]`, and raw `inputs`. Live server-side |
+| `rest.tokenBundle(mint)` | All | **New 1.19** · Bundle-cohort holdings — `bundle` block (`wallet_count`, `bundle_kind`, `held_ratio`, headline `held_pct_of_supply`, `fully_exited`, `buy_volume`, `tokens_held`). BASIC/TRADER = block only; PRO = top-10 `wallets` + flags; ULTRA = full cohort + identity fields |
+| `rest.tokensBatchRisk(mints)` | PRO+ | **New 1.18** · Bulk risk scoring — up to 50 mints in one call (counts as 1 request). Each `tokens[]` entry is a full risk result or `{ mint, error: "not_tracked" }`; untracked mints don't fail the batch |
 | `rest.tokenCandles(mint, params?)` | PRO+ | OHLC candles. PRO = OHLCV, last 30 days; ULTRA = + net flow (buy/sell volume, `net_volume_usd`, counts, MEV vol), liquidity delta, full history |
 
 **tokenCandles params** — `tf` ("1m" \| "5m" \| "15m" \| "1h" \| "4h" \| "1d", default "1h"), `limit` (1–1000, default 200), `from` (ISO 8601), `to` (ISO 8601)
+
+```ts
+// Score a basket in one request (counts as 1 against quota)
+const { tokens, count } = await rest.tokensBatchRisk([mintA, mintB, mintC]);
+for (const t of tokens) {
+  if ("error" in t) console.log(t.mint, t.error);        // e.g. "not_tracked"
+  else console.log(t.mint, t.risk_score, t.band);        // full risk result + as_of
+}
+```
 
 ### Signal Scorecard *(new in 1.15)*
 
@@ -340,6 +360,23 @@ stream.subscribe(["kol:trades", "deployer:alerts"]);
 
 Channels: `kol:trades`, `kol:coordination`, `kol:first_touches`, `deployer:alerts`, `wallet_tracker:events`, `copytrade:signals`, `price_alert:events`, `sniper:deploys`, `token:graduations` (every pump.fun graduation in real time, tracked deployer or not — typed `GraduationEvent`). Lifecycle events: `open`, `close`, `reconnect`, `heartbeat`, `error`. Uses the global `WebSocket` on Node 22+; on Node < 22 also `npm i ws`.
 
+### Live stream sessions *(new in 1.18)*
+
+List and force-release the connection slots your key currently holds across both stream services (ws-streaming + dex-stream). Reflects in-memory state, so every listed slot is evictable — the self-serve fix when a deploy overlap leaves a ghost socket holding your slot and reconnects hit the 4002 connection limit. PRO/ULTRA only.
+
+| Method | Tier | Description |
+|---|---|---|
+| `rest.streamSessions()` | PRO+ | List your live sessions — each with `id`, `service`, `tier`, `channels[]`, `connected_at`, `remote_ip`, `messages_sent`. Typed `StreamSessionsResponse` |
+| `rest.streamSessionKill(id)` | PRO+ | Terminate one of your sessions by `id` and free its slot. Throws on a bad id (400) or no matching live session (404). Typed `StreamSessionEvictResponse` |
+
+```ts
+const { sessions } = await rest.streamSessions();
+for (const s of sessions) console.log(s.id, s.service, s.channels, s.messages_sent);
+
+// Free a stuck slot after a deploy overlap
+if (sessions.length) await rest.streamSessionKill(sessions[0].id);  // { evicted: true, id }
+```
+
 ## DEX Firehose (Ultra)
 
 Connect to `dex_ws_url` and use the multi-subscription protocol — up to **10 named subs per connection**, each with its own `sub_id`, server-side filters, and optional replay (up to 500 most recent matching trades) from a server-side buffer holding ~5 minutes of firehose history — it backfills trades from before your connection existed. Replayed trades arrive newest-first flagged `"replay": true`, then a `replay_done` frame; sort by `block_time` client-side.
@@ -404,6 +441,6 @@ Docs: [madeonsol.com/solana-api](https://madeonsol.com/solana-api)
 | TypeScript SDK | [`madeonsol`](https://www.npmjs.com/package/madeonsol) on npm |
 | Rust SDK | [`madeonsol`](https://crates.io/crates/madeonsol) on crates.io |
 | Python (LangChain, CrewAI) | [`madeonsol-x402`](https://pypi.org/project/madeonsol-x402/) on PyPI |
-| MCP Server (Claude, Cursor) | [`mcp-server-madeonsol`](https://www.npmjs.com/package/mcp-server-madeonsol) · [Smithery](https://smithery.ai/servers/madeonsol/solana-kol-intelligence) · [Glama](https://glama.ai/mcp/servers/LamboPoewert/mcp-server-madeonsol) |
+| MCP Server (Claude, Cursor) | [`mcp-server-madeonsol`](https://www.npmjs.com/package/mcp-server-madeonsol) · [Smithery](https://smithery.ai/servers/madeonsol/solana-kol-intelligence) · [Glama](https://glama.ai/mcp/servers/madeonsol/mcp-server-madeonsol) |
 | ElizaOS | [`@madeonsol/plugin-madeonsol`](https://www.npmjs.com/package/@madeonsol/plugin-madeonsol) |
 | Solana Agent Kit | [`solana-agent-kit-plugin-madeonsol`](https://www.npmjs.com/package/solana-agent-kit-plugin-madeonsol) |

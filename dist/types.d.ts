@@ -335,6 +335,8 @@ export interface DeployerAlert {
         labeled_tokens?: number | null;
         /** v1.11.1 — average minutes from deploy to bond across the deployer's bonded tokens. */
         avg_time_to_bond_minutes?: number | null;
+        /** v1.16 — deployer wallet SOL balance at the moment the alert fired. Null for historical rows. */
+        deployer_sol_balance?: number | null;
     };
     kol_buys: {
         count: number;
@@ -415,6 +417,28 @@ export interface StreamToken {
     ws_url: string;
     /** DEX trade stream URL — only present for Ultra tier subscribers */
     dex_ws_url?: string;
+}
+/** One live WebSocket session holding a connection slot. Returned by
+ *  GET /stream/sessions; its `id` can be passed to DELETE /stream/sessions/{id}
+ *  to force-release the slot. */
+export interface StreamSession {
+    id: string;
+    service: "ws-streaming" | "dex-stream";
+    tier: string;
+    channels: string[];
+    connected_at: string;
+    remote_ip: string | null;
+    messages_sent: number;
+}
+/** Response of GET /stream/sessions — the caller's live WebSocket sessions. */
+export interface StreamSessionsResponse {
+    sessions: StreamSession[];
+    count: number;
+}
+/** Response of DELETE /stream/sessions/{id} — a session slot was released. */
+export interface StreamSessionEvictResponse {
+    evicted: true;
+    id: string;
 }
 export interface KolPair {
     kol_a: {
@@ -823,6 +847,23 @@ export interface TokenRiskResponse {
     score_version: string;
     as_of: string;
 }
+/** Per-mint error object for untracked / failed mints in a batch risk response.
+ *  Untracked mints come back as `not_tracked` and do NOT fail the batch; a
+ *  per-mint compute failure comes back as `error`. */
+export interface TokenBatchRiskError {
+    mint: string;
+    error: "not_tracked" | "error";
+}
+/** One entry in the `tokens` array of POST /tokens/batch/risk — either a full
+ *  risk result (same shape as GET /tokens/{mint}/risk) or a per-mint error. */
+export type TokenBatchRiskResult = TokenRiskResponse | TokenBatchRiskError;
+/** Response of POST /tokens/batch/risk — bulk risk scoring for 1–50 mints.
+ *  `tokens` preserves de-duplicated input order; `count` = number of unique
+ *  mints. Counts as 1 request against quota. */
+export interface TokenBatchRiskResponse {
+    tokens: TokenBatchRiskResult[];
+    count: number;
+}
 export type CandleTimeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 export interface CandlesParams {
     /** Candle timeframe. Default "1h". */
@@ -871,6 +912,81 @@ export interface CandlesResponse {
     /** True when ULTRA net-flow/liquidity fields are populated on each candle. */
     net_flow_included: boolean;
     candles: Candle[];
+}
+export type TokenFlowWindow = "1h" | "24h";
+export interface TokenFlowParams {
+    /** Lookback window. Default "1h". */
+    window?: TokenFlowWindow;
+}
+/**
+ * Trade-flow aggregate for a token over the lookback window — organic-vs-fake
+ * volume read. `trades_per_wallet` is a wash-trading proxy (high = a small set of
+ * wallets churning volume). `net_sol` = sell_sol − buy_sol (positive = net SOL
+ * leaving the pool). PRO/ULTRA only. KEYED (v1) — no x402 route.
+ */
+export interface TokenFlowResponse {
+    mint: string;
+    window: TokenFlowWindow;
+    /** ISO 8601 lower bound of the window. */
+    from: string;
+    unique_wallets: number;
+    unique_buyers: number;
+    unique_sellers: number;
+    buy_count: number;
+    sell_count: number;
+    total_trades: number;
+    buy_sol: number;
+    sell_sol: number;
+    /** sell_sol − buy_sol; positive = net SOL leaving the pool (net selling). */
+    net_sol: number;
+    /** total_trades / unique_wallets — wash-trading proxy. */
+    trades_per_wallet: number;
+}
+/** How the bundle cohort was grouped — `atomic_tx` (same transaction),
+ *  `same_slot` (same block slot), or `none` (no bundle detected). */
+export type BundleKind = "atomic_tx" | "same_slot" | "none";
+/** Aggregate bundle-cohort holdings for a token. Returned on all tiers. */
+export interface BundleSummary {
+    /** Number of wallets in the bundle cohort. */
+    wallet_count: number;
+    bundle_kind: BundleKind;
+    /** Net held / buy volume (0–1). Churn-sensitive secondary read; null when unknown. */
+    held_ratio: number | null;
+    /** Net held / circulating supply (0–1) — the HEADLINE signal. Null when supply is unknown. */
+    held_pct_of_supply: number | null;
+    fully_exited: boolean;
+    /** Cumulative buy volume — NOT distinct tokens; can exceed supply. */
+    buy_volume: number;
+    /** Swap-derived net position (proxy for on-chain balance). */
+    tokens_held: number;
+}
+/**
+ * One wallet in the bundle cohort. `rank`…`is_kol` are returned on PRO (top-10)
+ * and ULTRA (full cohort). The identity fields (`kol_name`, `win_rate`,
+ * `bot_confidence`, `tokens_held`) are ULTRA-only.
+ */
+export interface BundleWallet {
+    rank: number;
+    wallet: string;
+    held_ratio: number | null;
+    has_sold: boolean;
+    atomic: boolean;
+    is_kol: boolean;
+    kol_name?: string | null;
+    win_rate?: number | null;
+    bot_confidence?: string | null;
+    tokens_held?: number;
+}
+/**
+ * Bundle-cohort holdings for a token. `held_pct_of_supply` (net held / circulating
+ * supply) is the headline signal. Field-gated by tier: BASIC/TRADER get the
+ * `bundle` block only (`wallets: []`); PRO adds the top-10 wallets with flags;
+ * ULTRA returns the full cohort plus per-wallet identity fields.
+ */
+export interface TokenBundleResponse {
+    mint: string;
+    bundle: BundleSummary;
+    wallets: BundleWallet[];
 }
 /** Payload of a `token:graduation` event — every pump.fun graduation
  * (bonding curve complete → PumpSwap migration), tracked deployer or not. */
@@ -1311,7 +1427,7 @@ export interface MeResponse {
         };
     };
 }
-export type TokenListSort = "mc_desc" | "mc_asc" | "last_trade_desc" | "liquidity_desc" | "cumulative_volume_desc";
+export type TokenListSort = "mc_desc" | "mc_asc" | "last_trade_desc" | "liquidity_desc" | "cumulative_volume_desc" | "mc_change_5m_desc" | "mc_change_1h_desc" | "volume_1h_desc" | "trending";
 export type TokenPrimaryDex = "pumpfun" | "pumpswap" | "raydium" | "meteora" | "orca" | "raydium_clmm";
 export interface TokensListParams {
     min_mc?: number;
@@ -1373,6 +1489,52 @@ export interface TokensListResponse {
         post_filtered: boolean;
     };
     filters: Record<string, unknown>;
+}
+export type AlmostBondedSort = "velocity_desc" | "progress_desc" | "eta_asc";
+export interface AlmostBondedParams {
+    /** Lower bound on bonding progress %. Default 80. */
+    min_progress?: number;
+    /** Upper bound on bonding progress %. Default 99.99 (already-bonded excluded). */
+    max_progress?: number;
+    /** Minimum Δprogress/min. Tokens without a 5m-ago snapshot are dropped when set. */
+    min_velocity_pct_per_min?: number;
+    /** Max minutes since deploy (post-filter). */
+    max_age_minutes?: number;
+    /** Filter by deployer reputation tier. */
+    deployer_tier?: "elite" | "good" | "moderate" | "rising" | "cold" | "unranked";
+    /** Only tokens whose mint+freeze authorities are revoked. */
+    authority_revoked?: boolean;
+    /** Minimum liquidity_usd. */
+    min_liq?: number;
+    /** Sort axis. Default "velocity_desc". */
+    sort?: AlmostBondedSort;
+    /** Page size (1–100). Default 50. */
+    limit?: number;
+}
+export interface AlmostBondedToken {
+    mint: string;
+    symbol: string | null;
+    name: string | null;
+    /** Bonding-curve progress %, from on-chain real_token_reserves depletion. */
+    progress_pct: number | null;
+    /** Δprogress per minute; null until a 5m-ago snapshot exists. */
+    velocity_pct_per_min: number | null;
+    /** Linear projection of minutes-to-bond from current velocity; null when not measurable. */
+    eta_minutes: number | null;
+    /** True when |velocity| is below the stall threshold; null when velocity is unknown. */
+    stalled: boolean | null;
+    real_sol_reserves: number | null;
+    market_cap_usd: number | null;
+    liquidity_usd: number | null;
+    authorities_revoked: boolean;
+    deployer_tier: string | null;
+    age_minutes: number | null;
+}
+export interface AlmostBondedResponse {
+    tokens: AlmostBondedToken[];
+    filters: Record<string, unknown>;
+    returned: number;
+    note: string;
 }
 export interface WalletStats {
     first_seen: string;

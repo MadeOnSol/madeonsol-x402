@@ -2,7 +2,7 @@ import { MadeOnSolStream } from "./stream.js";
 export { MadeOnSolStream } from "./stream.js";
 const DEFAULT_BASE_URL = "https://madeonsol.com";
 function resolveAuthHeaders(mode, key) {
-    const h = { "User-Agent": "madeonsol-x402/1.9.0" };
+    const h = { "User-Agent": "madeonsol-x402/1.16.0" };
     if (mode === "madeonsol")
         h.Authorization = `Bearer ${key}`;
     return h;
@@ -173,6 +173,24 @@ export class MadeOnSolX402 {
     async tokenRisk(mint) {
         return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/risk`);
     }
+    /** Bundle-cohort holdings for a token — `held_pct_of_supply` (net held / supply) is the headline "are the bundlers still holding?" read. */
+    async tokenBundle(mint) {
+        return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/bundle`);
+    }
+    /**
+     * Trade-flow aggregate for a token — organic-vs-fake volume read: unique
+     * wallets/buyers/sellers, buy/sell counts + SOL, net SOL, and a
+     * `trades_per_wallet` wash-trading proxy. PRO/ULTRA only. **KEYED (v1) — there
+     * is no x402 route**; requires an `msk_` API key (x402-only clients can't reach it).
+     * @param mint Token mint (base58).
+     * @param params `window` ("1h" | "24h", default "1h").
+     */
+    async tokenFlow(mint, params) {
+        if (this.authMode !== "madeonsol") {
+            throw new Error("tokenFlow requires an msk_ API key (no x402 route). Get one free at https://madeonsol.com/pricing");
+        }
+        return this.request(`/api/v1/tokens/${encodeURIComponent(mint)}/flow`, params);
+    }
     /** Early-buyer quality score (dump-cluster exposure, recycled wallets, smart money) + live Signal Scorecard efficacy. */
     async tokenBuyerQuality(mint) {
         return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/buyer-quality`);
@@ -305,6 +323,26 @@ export class MadeOnSolREST {
         return new MadeOnSolStream({ ...opts, getToken: () => this.getStreamToken() });
     }
     /**
+     * List your live WebSocket sessions across both stream services (ws-streaming
+     * + dex-stream). Reflects in-memory connection state, so every listed slot is
+     * evictable via {@link streamSessionKill}. Useful when a deploy overlap leaves
+     * a ghost socket holding your slot and reconnects hit the 4002 connection
+     * limit. PRO/ULTRA only.
+     */
+    async streamSessions() {
+        return this.request("GET", "/stream/sessions");
+    }
+    /**
+     * Terminate one of your own live WebSocket sessions by id and free its
+     * connection slot immediately — the self-serve fix for a 4002 lockout after a
+     * deploy overlap. `id` is the session id from {@link streamSessions}. Throws
+     * on a non-positive-integer id (400) or when no live session with that id
+     * belongs to your key (404). PRO/ULTRA only.
+     */
+    async streamSessionKill(id) {
+        return this.request("DELETE", `/stream/sessions/${encodeURIComponent(String(id))}`);
+    }
+    /**
      * v1.7 — Inspect your account: tier, daily/burst quota state, subscription
      * expiry, and per-feature usage. Use `quota.daily.remaining` for self-throttling
      * without parsing rate-limit headers.
@@ -330,6 +368,26 @@ export class MadeOnSolREST {
             }
         }
         return this.request("GET", "/tokens", undefined, query);
+    }
+    /**
+     * v1.17 — Pre-bond pump.fun tokens approaching graduation, ranked by velocity
+     * (Δprogress/min) — "95% and accelerating" beats "92% stalled". Each token is
+     * enriched with its deployer's reputation tier. `progress_pct` comes from
+     * on-chain real_token_reserves depletion; `velocity_pct_per_min` is null until
+     * a 5m snapshot exists; `eta_minutes` is a linear projection. PRO/ULTRA only.
+     */
+    async almostBonded(params) {
+        // Coerce booleans to "true"/"false" strings since the shared request
+        // helper only accepts string|number|undefined query values.
+        const query = {};
+        if (params) {
+            for (const [k, v] of Object.entries(params)) {
+                if (v === undefined || v === null)
+                    continue;
+                query[k] = typeof v === "boolean" ? (v ? "true" : "false") : v;
+            }
+        }
+        return this.request("GET", "/tokens/almost-bonded", undefined, query);
     }
     /* ── Alpha Wallet Intelligence ── */
     /** Top statistically profitable early-buyer wallets. BASIC=25, PRO=100, ULTRA=500. */
@@ -361,6 +419,32 @@ export class MadeOnSolREST {
      */
     async tokenRisk(mint) {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/risk`);
+    }
+    /**
+     * Bundle-cohort holdings for a token — "are the bundle wallets still holding?".
+     * The `bundle` block carries the aggregate: `wallet_count`, `bundle_kind`
+     * (atomic_tx/same_slot/none), `held_ratio` (net held / buy volume — churn-sensitive
+     * secondary), `held_pct_of_supply` (net held / circulating supply — the HEADLINE;
+     * null when supply is unknown), `fully_exited`, `buy_volume`, and `tokens_held`.
+     * Field-gated by tier: BASIC/TRADER get the `bundle` block only (`wallets: []`);
+     * PRO adds the top-10 `wallets` with flags (`has_sold`, `atomic`, `is_kol`); ULTRA
+     * returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`,
+     * `bot_confidence`, `tokens_held`). All tiers reach it.
+     */
+    async tokenBundle(mint) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle`);
+    }
+    /**
+     * Bulk token rug-risk/safety scoring — up to 50 mints in one call (counts as 1
+     * request against quota). Each entry in `tokens` is either a full risk result
+     * (same shape as {@link tokenRisk}, plus `as_of`) or `{ mint, error: "not_tracked" }`
+     * for untracked mints — untracked mints do NOT fail the batch. `tokens`
+     * preserves de-duplicated input order; `count` is the number of unique mints.
+     * PRO/ULTRA only — BASIC receives HTTP 403.
+     * @param mints 1–50 base58 mint addresses.
+     */
+    async tokensBatchRisk(mints) {
+        return this.request("POST", "/tokens/batch/risk", { mints });
     }
     /**
      * 1-minute-derived OHLC candles for a token. `tf` selects the timeframe

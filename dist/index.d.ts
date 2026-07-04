@@ -1,9 +1,9 @@
-import type { KolFeedParams, KolFeedResponse, KolCoordinationParams, KolCoordinationResponse, KolLeaderboardParams, KolLeaderboardResponse, KolPairsParams, KolPairsResponse, KolTimingParams, KolTimingResponse, KolHotTokensParams, KolHotTokensResponse, KolEntryOrderParams, KolEntryOrderResponse, KolCompareParams, KolCompareResponse, KolAlertsParams, KolAlertsResponse, DeployerAlertsParams, DeployerAlertsResponse, DeployerTrajectoryResponse, DiscoveryResponse, CreateWebhookParams, UpdateWebhookParams, Webhook, WebhookWithSecret, WebhookDelivery, WebhookTestResult, StreamToken, AlphaLeaderboardParams, AlphaLeaderboardResponse, AlphaWalletResponse, AlphaLinkedResponse, TokenCapTableResponse, TokenBuyerQualityResponse, TokenRiskResponse, CandlesParams, CandlesResponse, CopyTradeSubscription, CopyTradeCreateParams, CopyTradeCreateResponse, CopyTradeUpdateParams, CopyTradeSignal, CopyTradeSignalsParams, CoordinationAlertRule, CoordinationAlertCreateParams, CoordinationAlertUpdateParams, CoordinationAlertListResponse, CoordinationAlertCreateResponse, FirstTouchesParams, FirstTouchesResponse, FirstTouchSubscription, FirstTouchSubscriptionCreateParams, FirstTouchSubscriptionUpdateParams, FirstTouchSubscriptionListResponse, FirstTouchSubscriptionCreateResponse, WalletTrackerListResponse, WalletTrackerAddResponse, WalletTrackerUpdateResponse, WalletTrackerTradesParams, WalletTrackerTradesResponse, WalletTrackerSummaryParams, WalletTrackerSummaryResponse, MeResponse, TokensListParams, TokensListResponse, WalletStatsResponse, WalletPnlResponse, WalletPositionsResponse, WalletTradesParams, WalletTradesResponse, PriceAlertCreateParams, PriceAlertUpdateParams, PriceAlertListResponse, PriceAlertCreateResponse, PriceAlertGetResponse, PriceAlertUpdateResponse, PriceAlertDeleteResponse, PriceAlertEventsParams, PriceAlertEventsResponse, ScoutLeaderboardParams, KolConsensusResponse, PeakHistoryResponse, CoordinationHistoryParams, TokenSnapshotResponse, SignalPerformanceResponse, SignalsCatalogResponse } from "./types.js";
+import type { KolFeedParams, KolFeedResponse, KolCoordinationParams, KolCoordinationResponse, KolLeaderboardParams, KolLeaderboardResponse, KolPairsParams, KolPairsResponse, KolTimingParams, KolTimingResponse, KolHotTokensParams, KolHotTokensResponse, KolEntryOrderParams, KolEntryOrderResponse, KolCompareParams, KolCompareResponse, KolAlertsParams, KolAlertsResponse, DeployerAlertsParams, DeployerAlertsResponse, DeployerTrajectoryResponse, DiscoveryResponse, CreateWebhookParams, UpdateWebhookParams, Webhook, WebhookWithSecret, WebhookDelivery, WebhookTestResult, StreamToken, StreamSessionsResponse, StreamSessionEvictResponse, AlphaLeaderboardParams, AlphaLeaderboardResponse, AlphaWalletResponse, AlphaLinkedResponse, TokenCapTableResponse, TokenBuyerQualityResponse, TokenRiskResponse, TokenBatchRiskResponse, TokenBundleResponse, CandlesParams, CandlesResponse, TokenFlowParams, TokenFlowResponse, CopyTradeSubscription, CopyTradeCreateParams, CopyTradeCreateResponse, CopyTradeUpdateParams, CopyTradeSignal, CopyTradeSignalsParams, CoordinationAlertRule, CoordinationAlertCreateParams, CoordinationAlertUpdateParams, CoordinationAlertListResponse, CoordinationAlertCreateResponse, FirstTouchesParams, FirstTouchesResponse, FirstTouchSubscription, FirstTouchSubscriptionCreateParams, FirstTouchSubscriptionUpdateParams, FirstTouchSubscriptionListResponse, FirstTouchSubscriptionCreateResponse, WalletTrackerListResponse, WalletTrackerAddResponse, WalletTrackerUpdateResponse, WalletTrackerTradesParams, WalletTrackerTradesResponse, WalletTrackerSummaryParams, WalletTrackerSummaryResponse, MeResponse, TokensListParams, TokensListResponse, AlmostBondedParams, AlmostBondedResponse, WalletStatsResponse, WalletPnlResponse, WalletPositionsResponse, WalletTradesParams, WalletTradesResponse, PriceAlertCreateParams, PriceAlertUpdateParams, PriceAlertListResponse, PriceAlertCreateResponse, PriceAlertGetResponse, PriceAlertUpdateResponse, PriceAlertDeleteResponse, PriceAlertEventsParams, PriceAlertEventsResponse, ScoutLeaderboardParams, KolConsensusResponse, PeakHistoryResponse, CoordinationHistoryParams, TokenSnapshotResponse, SignalPerformanceResponse, SignalsCatalogResponse } from "./types.js";
 import { MadeOnSolStream } from "./stream.js";
 import type { StreamClientOptions } from "./stream.js";
 export { MadeOnSolStream } from "./stream.js";
 export type { StreamClientOptions, StreamChannel, StreamEventName, StreamEvent, StreamLifecycleEvent, } from "./stream.js";
-export type { KolTrade, KolStrategy, KolFeedParams, KolFeedResponse, KolCoordinationToken, KolCoordinationParams, KolCoordinationResponse, KolLeaderboardEntry, KolLeaderboardSort, KolLeaderboardParams, KolLeaderboardResponse, KolPair, KolPairsParams, KolPairsResponse, KolTimingData, KolTimingParams, KolTimingResponse, HotToken, KolHotTokensParams, KolHotTokensResponse, KolEntryOrderEntry, KolEntryOrderParams, KolEntryOrderResponse, KolCompareProfile, KolCompareOverlapToken, KolCompareParams, KolCompareResponse, KolAlert, KolAlertType, KolAlertWindow, KolAlertSeverity, KolAlertsParams, KolAlertsResponse, TrajectoryData, DeployerTrajectoryResponse, DeployerAlert, DeployerAlertsParams, DeployerAlertsResponse, DiscoveryEndpoint, DiscoveryResponse, WebhookEvent, WebhookFilters, Webhook, WebhookWithSecret, CreateWebhookParams, UpdateWebhookParams, WebhookDelivery, WebhookTestResult, StreamToken, AlphaPeriod, AlphaSort, AlphaLeaderboardParams, AlphaLeaderboardEntry, AlphaLeaderboardResponse, AlphaWalletSummary, AlphaWalletToken, AlphaWalletResponse, AlphaLinkedWallet, AlphaLinkedResponse, BuyerQualityConfidence, BuyerQualitySignal, CapTableBuyer, CapTableSummary, TokenCapTableResponse, TokenBuyerQualityResponse, TokenRiskBand, TokenRiskStatus, TokenRiskFactor, TokenRiskInputs, TokenRiskResponse, CandleTimeframe, CandlesParams, Candle, CandlesResponse, CopyTradeAction, CopyTradeSizingMode, CopyTradeDeliveryMode, CopyTradeSubscription, CopyTradeCreateParams, CopyTradeUpdateParams, CopyTradeCreateResponse, CopyTradeSignal, CopyTradeSignalsParams, CoordinationDeliveryMode, CoordinationAlertRule, CoordinationAlertCreateParams, CoordinationAlertUpdateParams, CoordinationAlertListResponse, CoordinationAlertCreateResponse, ScoutTier, FirstTouchesParams, FirstTouchEvent, FirstTouchesResponse, FirstTouchSubscriptionFilters, FirstTouchSubscription, FirstTouchSubscriptionCreateParams, FirstTouchSubscriptionUpdateParams, FirstTouchSubscriptionListResponse, FirstTouchSubscriptionCreateResponse, KolCoordinationKol, WalletTrackerEntry, WalletTrackerListResponse, WalletTrackerAddResponse, WalletTrackerUpdateResponse, WalletTrackerAction, WalletTrackerEventType, WalletTrackerTradesParams, WalletTrackerTrade, WalletTrackerTradesResponse, WalletTrackerSummaryParams, WalletTrackerSummaryStats, WalletTrackerSummaryResponse, WalletStats, WalletFlags, WalletStatsResponse, WalletTopToken, WalletTradingStyle, WalletDeployerTierEntry, WalletDeployerBreakdown, WalletRecentTrade, WalletPnlSummary, WalletPnlCurvePoint, WalletClosedPosition, WalletOpenPosition, WalletPnlResponse, WalletPositionsResponse, WalletTradesParams, WalletTrade, WalletTradesResponse, WalletStandoutTrade, WalletBiggestMiss, WalletVerdictTone, WalletVerdict, WalletDerivedStats, PriceAlertDeliveryMode, PriceAlertStatus, PriceAlert, PriceAlertCreateParams, PriceAlertUpdateParams, PriceAlertListResponse, PriceAlertCreateResponse, PriceAlertGetResponse, PriceAlertUpdateResponse, PriceAlertDeleteResponse, PriceAlertEvent, PriceAlertEventsParams, PriceAlertEventsResponse, ScoutLeaderboardSort, ScoutLeaderboardParams, KolConsensusResponse, PeakHistoryResponse, CoordinationHistoryParams, TokenSnapshotTopBuyer, TokenSnapshot, TokenSnapshotResponse, SignalName, SignalPerformanceBucket, SignalPerformanceSeriesPoint, SignalPerformanceResponse, SignalsCatalogEntry, SignalsCatalogResponse, } from "./types.js";
+export type { KolTrade, KolStrategy, KolFeedParams, KolFeedResponse, KolCoordinationToken, KolCoordinationParams, KolCoordinationResponse, KolLeaderboardEntry, KolLeaderboardSort, KolLeaderboardParams, KolLeaderboardResponse, KolPair, KolPairsParams, KolPairsResponse, KolTimingData, KolTimingParams, KolTimingResponse, HotToken, KolHotTokensParams, KolHotTokensResponse, KolEntryOrderEntry, KolEntryOrderParams, KolEntryOrderResponse, KolCompareProfile, KolCompareOverlapToken, KolCompareParams, KolCompareResponse, KolAlert, KolAlertType, KolAlertWindow, KolAlertSeverity, KolAlertsParams, KolAlertsResponse, TrajectoryData, DeployerTrajectoryResponse, DeployerAlert, DeployerAlertsParams, DeployerAlertsResponse, DiscoveryEndpoint, DiscoveryResponse, WebhookEvent, WebhookFilters, Webhook, WebhookWithSecret, CreateWebhookParams, UpdateWebhookParams, WebhookDelivery, WebhookTestResult, StreamToken, StreamSession, StreamSessionsResponse, StreamSessionEvictResponse, AlphaPeriod, AlphaSort, AlphaLeaderboardParams, AlphaLeaderboardEntry, AlphaLeaderboardResponse, AlphaWalletSummary, AlphaWalletToken, AlphaWalletResponse, AlphaLinkedWallet, AlphaLinkedResponse, BuyerQualityConfidence, BuyerQualitySignal, CapTableBuyer, CapTableSummary, TokenCapTableResponse, TokenBuyerQualityResponse, TokenRiskBand, TokenRiskStatus, TokenRiskFactor, TokenRiskInputs, TokenRiskResponse, TokenBatchRiskError, TokenBatchRiskResult, TokenBatchRiskResponse, BundleKind, BundleSummary, BundleWallet, TokenBundleResponse, CandleTimeframe, CandlesParams, Candle, CandlesResponse, TokenFlowWindow, TokenFlowParams, TokenFlowResponse, CopyTradeAction, CopyTradeSizingMode, CopyTradeDeliveryMode, CopyTradeSubscription, CopyTradeCreateParams, CopyTradeUpdateParams, CopyTradeCreateResponse, CopyTradeSignal, CopyTradeSignalsParams, CoordinationDeliveryMode, CoordinationAlertRule, CoordinationAlertCreateParams, CoordinationAlertUpdateParams, CoordinationAlertListResponse, CoordinationAlertCreateResponse, ScoutTier, FirstTouchesParams, FirstTouchEvent, FirstTouchesResponse, FirstTouchSubscriptionFilters, FirstTouchSubscription, FirstTouchSubscriptionCreateParams, FirstTouchSubscriptionUpdateParams, FirstTouchSubscriptionListResponse, FirstTouchSubscriptionCreateResponse, KolCoordinationKol, WalletTrackerEntry, WalletTrackerListResponse, WalletTrackerAddResponse, WalletTrackerUpdateResponse, WalletTrackerAction, WalletTrackerEventType, WalletTrackerTradesParams, WalletTrackerTrade, WalletTrackerTradesResponse, WalletTrackerSummaryParams, WalletTrackerSummaryStats, WalletTrackerSummaryResponse, WalletStats, WalletFlags, WalletStatsResponse, WalletTopToken, WalletTradingStyle, WalletDeployerTierEntry, WalletDeployerBreakdown, WalletRecentTrade, WalletPnlSummary, WalletPnlCurvePoint, WalletClosedPosition, WalletOpenPosition, WalletPnlResponse, WalletPositionsResponse, WalletTradesParams, WalletTrade, WalletTradesResponse, WalletStandoutTrade, WalletBiggestMiss, WalletVerdictTone, WalletVerdict, WalletDerivedStats, PriceAlertDeliveryMode, PriceAlertStatus, PriceAlert, PriceAlertCreateParams, PriceAlertUpdateParams, PriceAlertListResponse, PriceAlertCreateResponse, PriceAlertGetResponse, PriceAlertUpdateResponse, PriceAlertDeleteResponse, PriceAlertEvent, PriceAlertEventsParams, PriceAlertEventsResponse, ScoutLeaderboardSort, ScoutLeaderboardParams, KolConsensusResponse, PeakHistoryResponse, CoordinationHistoryParams, TokenSnapshotTopBuyer, TokenSnapshot, TokenSnapshotResponse, SignalName, SignalPerformanceBucket, SignalPerformanceSeriesPoint, SignalPerformanceResponse, SignalsCatalogEntry, SignalsCatalogResponse, AlmostBondedSort, AlmostBondedParams, AlmostBondedToken, AlmostBondedResponse, } from "./types.js";
 interface MadeOnSolClientOptions {
     /** MadeOnSol API key — get one free at https://madeonsol.com/pricing. */
     apiKey?: string;
@@ -96,6 +96,17 @@ export declare class MadeOnSolX402 {
     peakHistory(mint: string): Promise<PeakHistoryResponse>;
     /** Token rug/safety score (0–100) with a per-factor breakdown — the "is this safe to buy?" call. */
     tokenRisk(mint: string): Promise<TokenRiskResponse>;
+    /** Bundle-cohort holdings for a token — `held_pct_of_supply` (net held / supply) is the headline "are the bundlers still holding?" read. */
+    tokenBundle(mint: string): Promise<TokenBundleResponse>;
+    /**
+     * Trade-flow aggregate for a token — organic-vs-fake volume read: unique
+     * wallets/buyers/sellers, buy/sell counts + SOL, net SOL, and a
+     * `trades_per_wallet` wash-trading proxy. PRO/ULTRA only. **KEYED (v1) — there
+     * is no x402 route**; requires an `msk_` API key (x402-only clients can't reach it).
+     * @param mint Token mint (base58).
+     * @param params `window` ("1h" | "24h", default "1h").
+     */
+    tokenFlow(mint: string, params?: TokenFlowParams): Promise<TokenFlowResponse>;
     /** Early-buyer quality score (dump-cluster exposure, recycled wallets, smart money) + live Signal Scorecard efficacy. */
     tokenBuyerQuality(mint: string): Promise<TokenBuyerQualityResponse>;
     /** Live token snapshot — price, market cap, FDV, liquidity, primary DEX, KOL buyer activity. */
@@ -181,6 +192,22 @@ export declare class MadeOnSolREST {
      */
     stream(opts?: Omit<StreamClientOptions, "getToken">): MadeOnSolStream;
     /**
+     * List your live WebSocket sessions across both stream services (ws-streaming
+     * + dex-stream). Reflects in-memory connection state, so every listed slot is
+     * evictable via {@link streamSessionKill}. Useful when a deploy overlap leaves
+     * a ghost socket holding your slot and reconnects hit the 4002 connection
+     * limit. PRO/ULTRA only.
+     */
+    streamSessions(): Promise<StreamSessionsResponse>;
+    /**
+     * Terminate one of your own live WebSocket sessions by id and free its
+     * connection slot immediately — the self-serve fix for a 4002 lockout after a
+     * deploy overlap. `id` is the session id from {@link streamSessions}. Throws
+     * on a non-positive-integer id (400) or when no live session with that id
+     * belongs to your key (404). PRO/ULTRA only.
+     */
+    streamSessionKill(id: number | string): Promise<StreamSessionEvictResponse>;
+    /**
      * v1.7 — Inspect your account: tier, daily/burst quota state, subscription
      * expiry, and per-feature usage. Use `quota.daily.remaining` for self-throttling
      * without parsing rate-limit headers.
@@ -193,6 +220,14 @@ export declare class MadeOnSolREST {
      * and post-filter — `pagination.post_filtered=true` flags this.
      */
     tokensList(params?: TokensListParams): Promise<TokensListResponse>;
+    /**
+     * v1.17 — Pre-bond pump.fun tokens approaching graduation, ranked by velocity
+     * (Δprogress/min) — "95% and accelerating" beats "92% stalled". Each token is
+     * enriched with its deployer's reputation tier. `progress_pct` comes from
+     * on-chain real_token_reserves depletion; `velocity_pct_per_min` is null until
+     * a 5m snapshot exists; `eta_minutes` is a linear projection. PRO/ULTRA only.
+     */
+    almostBonded(params?: AlmostBondedParams): Promise<AlmostBondedResponse>;
     /** Top statistically profitable early-buyer wallets. BASIC=25, PRO=100, ULTRA=500. */
     alphaLeaderboard(params?: AlphaLeaderboardParams): Promise<AlphaLeaderboardResponse>;
     /** Full alpha profile for one wallet: per-token breakdown + bot signals. ULTRA only. */
@@ -210,6 +245,28 @@ export declare class MadeOnSolREST {
      * rate, KOL signal, blacklist). PRO/ULTRA only — BASIC receives HTTP 403.
      */
     tokenRisk(mint: string): Promise<TokenRiskResponse>;
+    /**
+     * Bundle-cohort holdings for a token — "are the bundle wallets still holding?".
+     * The `bundle` block carries the aggregate: `wallet_count`, `bundle_kind`
+     * (atomic_tx/same_slot/none), `held_ratio` (net held / buy volume — churn-sensitive
+     * secondary), `held_pct_of_supply` (net held / circulating supply — the HEADLINE;
+     * null when supply is unknown), `fully_exited`, `buy_volume`, and `tokens_held`.
+     * Field-gated by tier: BASIC/TRADER get the `bundle` block only (`wallets: []`);
+     * PRO adds the top-10 `wallets` with flags (`has_sold`, `atomic`, `is_kol`); ULTRA
+     * returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`,
+     * `bot_confidence`, `tokens_held`). All tiers reach it.
+     */
+    tokenBundle(mint: string): Promise<TokenBundleResponse>;
+    /**
+     * Bulk token rug-risk/safety scoring — up to 50 mints in one call (counts as 1
+     * request against quota). Each entry in `tokens` is either a full risk result
+     * (same shape as {@link tokenRisk}, plus `as_of`) or `{ mint, error: "not_tracked" }`
+     * for untracked mints — untracked mints do NOT fail the batch. `tokens`
+     * preserves de-duplicated input order; `count` is the number of unique mints.
+     * PRO/ULTRA only — BASIC receives HTTP 403.
+     * @param mints 1–50 base58 mint addresses.
+     */
+    tokensBatchRisk(mints: string[]): Promise<TokenBatchRiskResponse>;
     /**
      * 1-minute-derived OHLC candles for a token. `tf` selects the timeframe
      * (1m/5m/15m/1h/4h/1d, default 1h); `limit` (1–1000, default 200) and the
