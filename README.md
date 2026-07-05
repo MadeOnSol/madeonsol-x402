@@ -151,6 +151,7 @@ Scored from 1M+ early-buyer records (wallets seen in the first 20 buyers of Pump
 | `rest.tokenBuyerQuality(mint)` | All | 0–100 buyer-quality score + full breakdown (5-min cached). Live server-side |
 | `rest.tokenRisk(mint)` | PRO+ | Transparent 0–100 rug-risk/safety score with `band`, explainable `factors[]`, and raw `inputs`. Live server-side |
 | `rest.tokenBundle(mint)` | All | **New 1.19** · Bundle-cohort holdings — `bundle` block (`wallet_count`, `bundle_kind`, `held_ratio`, headline `held_pct_of_supply`, `fully_exited`, `buy_volume`, `tokens_held`). BASIC = block only; PRO = top-10 `wallets` + flags; ULTRA = full cohort + identity fields |
+| `rest.tokenPools(mint)` | PRO+ | **New 1.19.2** · Per-venue liquidity map — every DEX pool a token trades in (`pool_address`, `dex`, `liquidity_usd`, `last_price_sol`, `is_active`), plus a `summary` rollup (`pool_count`, `active_pool_count`, `dex_count`, `total_liquidity_usd`, `primary_pool`/`primary_dex`, `top_pool_share_pct`) |
 | `rest.tokensBatchRisk(mints)` | PRO+ | **New 1.18** · Bulk risk scoring — up to 50 mints in one call (counts as 1 request). Each `tokens[]` entry is a full risk result or `{ mint, error: "not_tracked" }`; untracked mints don't fail the batch |
 | `rest.tokenCandles(mint, params?)` | PRO+ | OHLC candles. PRO = OHLCV, last 30 days; ULTRA = + net flow (buy/sell volume, `net_volume_usd`, counts, MEV vol), liquidity delta, full history |
 
@@ -337,6 +338,7 @@ Per-account watchlist with historical swap/transfer history.
 | `rest.kolTiming(wallet, params?)` | Entry/exit timing — hold duration, exit speed, hour distribution |
 | `rest.kolPnl(wallet, params?)` | Per-wallet PnL breakdown |
 | `rest.deployerTrajectory(wallet)` | Deployer skill curve — streaks, rolling bond rate, trend |
+| `rest.deployerHistory(wallet, opts?)` | **New 1.19.2** · PRO+ · Daily reputation time-series — backtest "was this deployer elite when it launched token X?" without look-ahead. `snapshots[]` carry per-day `tier`, `is_tracked`, `total_deployed`/`total_bonded`, `bonding_rate`, `recent_bond_rate`, `avg_peak_mc`, `best_token_peak_mc`. `opts.limit` (1–365, default 90) |
 
 ### Streaming token
 

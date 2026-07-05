@@ -1947,3 +1947,65 @@ export interface WalletTradesResponse {
     until:      number;
   };
 }
+
+/* ── Token pools (per-venue liquidity map) ── */
+
+/** One DEX pool a token trades in. `is_active` distinguishes live vs parked venues. */
+export interface TokenPool {
+  pool_address:   string;
+  dex:            string;
+  quote_mint:     string;
+  liquidity_usd:  number | null;
+  last_price_sol: number | null;
+  last_swap_at:   string | null;
+  amm_id:         string | null;
+  is_active:      boolean;
+}
+
+/** Aggregate venue map for a token — pool/dex counts, total liquidity, fragmentation. */
+export interface TokenPoolsSummary {
+  pool_count:         number;
+  active_pool_count:  number;
+  dex_count:          number;
+  dexes:              string[];
+  total_liquidity_usd: number | null;
+  primary_pool:       string | null;
+  primary_dex:        string | null;
+  /** Share of total liquidity held by the largest pool (0–100). */
+  top_pool_share_pct: number | null;
+}
+
+/**
+ * Per-venue liquidity map — every DEX pool a token trades in, live vs parked,
+ * with fragmentation and top-pool share. PRO/ULTRA only.
+ */
+export interface TokenPoolsResponse {
+  mint:    string;
+  pools:   TokenPool[];
+  summary: TokenPoolsSummary;
+}
+
+/* ── Deployer reputation history (daily time-series) ── */
+
+/** One daily reputation snapshot for a deployer wallet. */
+export interface DeployerHistorySnapshot {
+  date:               string;
+  tier:               string;
+  is_tracked:         boolean;
+  total_deployed:     number;
+  total_bonded:       number;
+  bonding_rate:       number | null;
+  recent_bond_rate:   number | null;
+  avg_peak_mc:        number | null;
+  best_token_peak_mc: number | null;
+}
+
+/**
+ * A deployer's daily reputation time-series — backtest "was this deployer elite
+ * when it launched token X?" without look-ahead bias. PRO/ULTRA only.
+ */
+export interface DeployerHistoryResponse {
+  is_deployer: boolean;
+  wallet:      string;
+  snapshots:   DeployerHistorySnapshot[];
+}

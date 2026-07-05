@@ -1,8 +1,9 @@
 import { MadeOnSolStream } from "./stream.js";
+import { VERSION } from "./version.js";
 export { MadeOnSolStream } from "./stream.js";
 const DEFAULT_BASE_URL = "https://madeonsol.com";
 function resolveAuthHeaders(mode, key) {
-    const h = { "User-Agent": "madeonsol-x402/1.19.1" };
+    const h = { "User-Agent": `madeonsol-x402/${VERSION}` };
     if (mode === "madeonsol")
         h.Authorization = `Bearer ${key}`;
     return h;
@@ -306,6 +307,17 @@ export class MadeOnSolREST {
     async deployerTrajectory(wallet) {
         return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/trajectory`);
     }
+    /**
+     * A deployer's daily reputation time-series — backtest "was this deployer elite
+     * when it launched token X?" without look-ahead bias. Each snapshot carries the
+     * `tier`, `is_tracked` flag, and that day's cumulative `total_deployed` /
+     * `total_bonded`, `bonding_rate`, `recent_bond_rate`, `avg_peak_mc`, and
+     * `best_token_peak_mc`. `limit` (1–365, default 90) bounds the number of days.
+     * PRO/ULTRA only.
+     */
+    async deployerHistory(wallet, opts) {
+        return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/history`, undefined, opts?.limit !== undefined ? { limit: opts.limit } : undefined);
+    }
     /** Generate a 24h WebSocket streaming token. */
     async getStreamToken() {
         return this.request("POST", "/stream/token");
@@ -433,6 +445,17 @@ export class MadeOnSolREST {
      */
     async tokenBundle(mint) {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle`);
+    }
+    /**
+     * Per-venue liquidity map — every DEX pool a token trades in, live vs parked,
+     * with fragmentation (`dex_count`) and `top_pool_share_pct`. Each pool carries
+     * `liquidity_usd`, `last_price_sol`, `last_swap_at`, and an `is_active` flag;
+     * the `summary` block rolls them up (`pool_count`, `active_pool_count`,
+     * `total_liquidity_usd`, `primary_pool`/`primary_dex`). PRO/ULTRA only — BASIC
+     * receives HTTP 403.
+     */
+    async tokenPools(mint) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/pools`);
     }
     /**
      * Bulk token rug-risk/safety scoring — up to 50 mints in one call (counts as 1

@@ -1,6 +1,6 @@
 {
   "name": "madeonsol-x402",
-  "version": "1.19.1",
+  "version": "1.19.2",
   "description": "Official TypeScript SDK for the MadeOnSol Solana API — KOL wallet tracking, Pump.fun deployer intelligence, x402 micropayments, and the all-DEX trade firehose. Free tier at madeonsol.com/pricing.",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,6 +16,7 @@
     "README.md"
   ],
   "scripts": {
+    "prebuild": "node ../gen-version.mjs",
     "build": "tsc",
     "preflight": "bash ../../scripts/preflight-publish.sh",
     "prepublishOnly": "npm run preflight && npm run build"
