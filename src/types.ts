@@ -1101,7 +1101,7 @@ export interface BundleWallet {
 
 /**
  * Bundle-cohort holdings for a token. `held_pct_of_supply` (net held / circulating
- * supply) is the headline signal. Field-gated by tier: BASIC/TRADER get the
+ * supply) is the headline signal. Field-gated by tier: BASIC get the
  * `bundle` block only (`wallets: []`); PRO adds the top-10 wallets with flags;
  * ULTRA returns the full cohort plus per-wallet identity fields.
  */
@@ -1578,7 +1578,7 @@ export interface TokenResponseBody {
 
 // ─── /me — v1.7 ──────────────────────────────────────────────────────────────
 
-export type ApiTier = "BASIC" | "TRADER" | "PRO" | "ULTRA";
+export type ApiTier = "BASIC" | "PRO" | "ULTRA";
 
 export interface MeQuotaWindow {
   limit:     number;

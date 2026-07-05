@@ -251,7 +251,7 @@ export declare class MadeOnSolREST {
      * (atomic_tx/same_slot/none), `held_ratio` (net held / buy volume — churn-sensitive
      * secondary), `held_pct_of_supply` (net held / circulating supply — the HEADLINE;
      * null when supply is unknown), `fully_exited`, `buy_volume`, and `tokens_held`.
-     * Field-gated by tier: BASIC/TRADER get the `bundle` block only (`wallets: []`);
+     * Field-gated by tier: BASIC get the `bundle` block only (`wallets: []`);
      * PRO adds the top-10 `wallets` with flags (`has_sold`, `atomic`, `is_kol`); ULTRA
      * returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`,
      * `bot_confidence`, `tokens_held`). All tiers reach it.

@@ -296,7 +296,7 @@ const DEFAULT_BASE_URL = "https://madeonsol.com";
 type AuthMode = "madeonsol" | "x402";
 
 function resolveAuthHeaders(mode: AuthMode, key: string): Record<string, string> {
-  const h: Record<string, string> = { "User-Agent": "madeonsol-x402/1.16.0" };
+  const h: Record<string, string> = { "User-Agent": "madeonsol-x402/1.19.1" };
   if (mode === "madeonsol") h.Authorization = `Bearer ${key}`;
   return h;
 }
@@ -820,7 +820,7 @@ export class MadeOnSolREST {
    * (atomic_tx/same_slot/none), `held_ratio` (net held / buy volume — churn-sensitive
    * secondary), `held_pct_of_supply` (net held / circulating supply — the HEADLINE;
    * null when supply is unknown), `fully_exited`, `buy_volume`, and `tokens_held`.
-   * Field-gated by tier: BASIC/TRADER get the `bundle` block only (`wallets: []`);
+   * Field-gated by tier: BASIC get the `bundle` block only (`wallets: []`);
    * PRO adds the top-10 `wallets` with flags (`has_sold`, `atomic`, `is_kol`); ULTRA
    * returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`,
    * `bot_confidence`, `tokens_held`). All tiers reach it.
