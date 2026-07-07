@@ -1916,6 +1916,53 @@ export interface WalletPositionsResponse {
   ttl_seconds?: number | null;
 }
 
+export interface WalletHoldingsParams {
+  /** 1–500, default 200. */
+  limit?:         number;
+  /** Minimum USD value per holding to include, default 0. */
+  min_value_usd?: number;
+}
+
+/** One current on-chain holding — an SPL or Token-2022 token account balance,
+ * enriched with our price/MC/name data plus a `transfer_delta` vs the wallet's
+ * trade-derived net position. */
+export interface Holding {
+  mint:                string;
+  symbol:              string | null;
+  name:                string | null;
+  amount:              number;
+  amount_raw:          string;
+  decimals:            number;
+  token_program:       "spl" | "token2022";
+  price_usd:           number | null;
+  value_usd:           number | null;
+  market_cap_usd:      number | null;
+  is_bonded:           boolean | null;
+  /** Trade-derived net position from FIFO math over the data window, or null. */
+  trade_derived_amount: number | null;
+  /** On-chain `amount` − `trade_derived_amount`. Nonzero exposes tokens that
+   * arrived/left WITHOUT a swap (airdrops, insider funding, wallet-hopping). */
+  transfer_delta:      number | null;
+}
+
+export interface WalletHoldingsResponse {
+  address:     string;
+  sol_balance: number;
+  holdings:    Holding[];
+  summary: {
+    token_accounts:  number;
+    non_zero:        number;
+    returned:        number;
+    priced:          number;
+    total_value_usd: number;
+    truncated:       boolean;
+  };
+  verified_at:       string;
+  trade_window_days: number;
+  cache_hit:         boolean;
+  ttl_seconds:       number;
+}
+
 export interface WalletTradesParams {
   limit?:      number;
   cursor?:     string;

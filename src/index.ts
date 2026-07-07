@@ -78,6 +78,9 @@ import type {
   WalletStatsResponse,
   WalletPnlResponse,
   WalletPositionsResponse,
+  WalletHoldingsParams,
+  WalletHoldingsResponse,
+  Holding,
   WalletTradesParams,
   WalletTradesResponse,
   PriceAlertCreateParams,
@@ -256,6 +259,9 @@ export type {
   WalletOpenPosition,
   WalletPnlResponse,
   WalletPositionsResponse,
+  WalletHoldingsParams,
+  WalletHoldingsResponse,
+  Holding,
   WalletTradesParams,
   WalletTrade,
   WalletTradesResponse,
@@ -1110,6 +1116,18 @@ export class MadeOnSolREST {
   /** Open positions only — lighter slice of `walletPnl`. Shares the same cache. PRO+. */
   async walletPositions(address: string): Promise<WalletPositionsResponse> {
     return this.request("GET", `/wallet/${encodeURIComponent(address)}/positions`);
+  }
+
+  /**
+   * Verified CURRENT on-chain holdings — reads the wallet's actual SPL + Token-2022
+   * token accounts and SOL balance from chain, enriches with price/MC/name/symbol,
+   * and computes `transfer_delta` (on-chain amount − trade-derived net position),
+   * exposing tokens that arrived/left without a swap (airdrops, insider funding,
+   * wallet-hopping). Distinct from `walletPositions` (trade-derived FIFO). ULTRA only.
+   */
+  async walletHoldings(address: string, params?: WalletHoldingsParams): Promise<WalletHoldingsResponse> {
+    return this.request("GET", `/wallet/${encodeURIComponent(address)}/holdings`, undefined,
+      params as Record<string, string | number | undefined>);
   }
 
   /** Cursor-paginated raw trades for any wallet. Filter by action / token_mint / since-until. PRO+. */

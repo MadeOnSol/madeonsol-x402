@@ -658,6 +658,16 @@ export class MadeOnSolREST {
     async walletPositions(address) {
         return this.request("GET", `/wallet/${encodeURIComponent(address)}/positions`);
     }
+    /**
+     * Verified CURRENT on-chain holdings — reads the wallet's actual SPL + Token-2022
+     * token accounts and SOL balance from chain, enriches with price/MC/name/symbol,
+     * and computes `transfer_delta` (on-chain amount − trade-derived net position),
+     * exposing tokens that arrived/left without a swap (airdrops, insider funding,
+     * wallet-hopping). Distinct from `walletPositions` (trade-derived FIFO). ULTRA only.
+     */
+    async walletHoldings(address, params) {
+        return this.request("GET", `/wallet/${encodeURIComponent(address)}/holdings`, undefined, params);
+    }
     /** Cursor-paginated raw trades for any wallet. Filter by action / token_mint / since-until. PRO+. */
     async walletTrades(address, params) {
         return this.request("GET", `/wallet/${encodeURIComponent(address)}/trades`, undefined, params);
