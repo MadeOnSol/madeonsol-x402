@@ -181,16 +181,77 @@ export class MadeOnSolX402 {
     /**
      * Trade-flow aggregate for a token — organic-vs-fake volume read: unique
      * wallets/buyers/sellers, buy/sell counts + SOL, net SOL, and a
-     * `trades_per_wallet` wash-trading proxy. PRO/ULTRA only. **KEYED (v1) — there
-     * is no x402 route**; requires an `msk_` API key (x402-only clients can't reach it).
+     * `trades_per_wallet` wash-trading proxy. PRO/ULTRA for keyed callers.
+     * **v1.21: now x402-payable** — the old keyed-only guard is gone. **x402: $0.01**
      * @param mint Token mint (base58).
      * @param params `window` ("1h" | "24h", default "1h").
      */
     async tokenFlow(mint, params) {
-        if (this.authMode !== "madeonsol") {
-            throw new Error("tokenFlow requires an msk_ API key (no x402 route). Get one free at https://madeonsol.com/pricing");
+        return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/flow`, params);
+    }
+    /**
+     * v1.21 — OHLCV candles for any tracked token, aggregated from the 1-minute
+     * base. All timeframes (1m/5m/15m/1h/4h/1d), up to 30 days of history.
+     * **x402: $0.01**
+     * @param params `tf`, `limit` (1–1000), `from`/`to` (ISO 8601).
+     */
+    async tokenCandles(mint, params) {
+        return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/candles`, params);
+    }
+    /**
+     * v1.21 — Launchpad tokens approaching graduation (pump.fun + LetsBonk
+     * LaunchLab) — bonding progress %, velocity (Δprogress/min), ETA to bond,
+     * liquidity, authority flags, deployer reputation tier. Ranked by velocity.
+     * **x402: $0.01**
+     */
+    async almostBonded(params) {
+        // Coerce booleans to "true"/"false" strings for the shared request helper.
+        const query = {};
+        if (params) {
+            for (const [k, v] of Object.entries(params)) {
+                if (v === undefined || v === null)
+                    continue;
+                query[k] = typeof v === "boolean" ? (v ? "true" : "false") : v;
+            }
         }
-        return this.request(`/api/v1/tokens/${encodeURIComponent(mint)}/flow`, params);
+        return this.request("/api/x402/tokens/almost-bonded", query);
+    }
+    /**
+     * v1.21 — The wallets that made (or lost) the most on a token, ranked by
+     * realized PnL or ROI (up to 25). Each trader is enriched with KOL identity
+     * and alpha-wallet reputation (win rate, bot confidence) so you can tell
+     * smart money from bots. **x402: $0.02**
+     * @param params `limit` (1–25), `sort` ("pnl" | "roi"), `window_days` (1–180), `min_bought_sol`.
+     */
+    async tokenTopTraders(mint, params) {
+        return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/top-traders`, params);
+    }
+    /**
+     * v1.21 — Early-buyer cap table: the first 10 non-deployer buyers with entry
+     * size/time, realized PnL, exit status, bundle/KOL/alpha flags, plus a 0–100
+     * buyer-quality score with confidence and signal. **x402: $0.02**
+     */
+    async tokenCapTable(mint) {
+        return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/cap-table`);
+    }
+    /**
+     * v1.21 — Recent deshred sniper deploys from elite/good-tier tracked
+     * deployers, detected seconds after launch. Each deploy carries deployer
+     * stats (bond rate, runner rate) and a slot-window snipe `footprint`
+     * (null until the ~10-min settle window has passed). The keyed ULTRA
+     * `?watchlist` filter is ignored on the x402 route. **x402: $0.01**
+     */
+    async sniperRecent(params) {
+        return this.request("/api/x402/sniper/recent", params);
+    }
+    /**
+     * v1.21 — Deployer bond-rate trajectory — current + longest streaks, rolling
+     * 10-token bond rates, improving/declining trend, deploy cadence, recovery
+     * speed, best/worst stretches. **x402: $0.01**
+     * @param params `include: "daily_snapshots"` adds 90 days of daily stats.
+     */
+    async deployerTrajectory(wallet, params) {
+        return this.request(`/api/x402/deployer-hunter/${encodeURIComponent(wallet)}/trajectory`, params);
     }
     /** Early-buyer quality score (dump-cluster exposure, recycled wallets, smart money) + live Signal Scorecard efficacy. */
     async tokenBuyerQuality(mint) {
@@ -671,6 +732,53 @@ export class MadeOnSolREST {
     /** Cursor-paginated raw trades for any wallet. Filter by action / token_mint / since-until. PRO+. */
     async walletTrades(address, params) {
         return this.request("GET", `/wallet/${encodeURIComponent(address)}/trades`, undefined, params);
+    }
+    /**
+     * v1.21 — Bulk wallet reputation flags for 1–100 addresses in one request
+     * (`POST /wallet/batch/classify`). Each entry matches the `flags` block of
+     * `walletStats` exactly: `is_sniper`, `is_bundler` (lifetime), `is_dumper`
+     * (rolling 42d), `is_kol` + `kol_name`, `bot_confidence`
+     * ("none"/"low"/"medium"/"high" | null), and `dump_cluster` cohort stats.
+     * Flags are pump.fun-pipeline scoped — `false` means "not observed", NOT
+     * verified clean. PRO/ULTRA only — BASIC receives HTTP 403.
+     * @param wallets 1–100 base58 wallet addresses.
+     */
+    async walletClassify(wallets) {
+        return this.request("POST", "/wallet/batch/classify", { wallets });
+    }
+    /**
+     * v1.21 — Mint-scoped trade tape: every captured trade for a token, cursor-
+     * paginated newest first (`GET /tokens/{mint}/trades`). Filter by `action`,
+     * `wallet`, and a `since`/`until` unix-seconds window; unlike `walletTrades`
+     * (90-day default), the default window here is the FULL history. Each trade
+     * carries `price_sol`/`price_usd`, `early_buyer_rank`, and `slot`. The
+     * `coverage` block is the honesty marker: history starts 2026-04-12
+     * (`history_start`) and capture is pump.fun-pipeline scoped (`scope`).
+     * PRO/ULTRA only — BASIC receives HTTP 403.
+     */
+    async tokenTrades(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/trades`, undefined, params);
+    }
+    /**
+     * v1.21 — The wallets that made (or lost) the most on a token, ranked by
+     * realized PnL or ROI. Each trader is enriched with KOL identity and
+     * alpha-wallet reputation (`bot_confidence`, historical win rate/PnL) so you
+     * can tell smart money from bots. `limit` PRO≤25 / ULTRA≤100; `sort`
+     * "pnl" (default) | "roi"; `window_days` 1–180 (default 90);
+     * `min_bought_sol` default 0.1. PRO/ULTRA only.
+     */
+    async tokenTopTraders(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/top-traders`, undefined, params);
+    }
+    /**
+     * v1.21 — Deshred sniper deploy feed: new pump.fun deploys reconstructed from
+     * shred-level data ~500ms before on-chain confirmation. PRO sees elite/good
+     * deployers; ULTRA sees every tier. Each deploy carries deployer stats and a
+     * slot-window snipe `footprint` (null until the ~10-min settle window has
+     * passed — absent, not zero). PRO/ULTRA only.
+     */
+    async sniperRecent(params) {
+        return this.request("GET", "/sniper/recent", undefined, params);
     }
 }
 function numHeader(res, name) {

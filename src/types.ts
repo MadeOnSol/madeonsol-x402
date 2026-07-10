@@ -918,6 +918,23 @@ export interface TokenRiskFactor {
   detail: string;
 }
 
+/** Slot-window snipe rollup (v1.21) — buys landed in slots [-1..+3] around a
+ *  token's deploy. `null` on the parent means the rollup hasn't been computed
+ *  yet (deploys younger than the ~10-min settle window) or the mint is outside
+ *  the pump.fun-pipeline write-gate — absent, not zero. */
+export interface SniperFootprint {
+  buys:               number;
+  buyers:             number;
+  sol:                number;
+  /** Share of token supply bought inside the window (%, or null when supply unknown). */
+  supply_pct:         number | null;
+  /** Buys from wallets on the known-sniper list. */
+  sniper_wallet_buys: number;
+  /** False when the window fell outside capture coverage — counts are unknown, not 0. */
+  data_available:     boolean;
+  as_of:              string;
+}
+
 export interface TokenRiskInputs {
   mint_authority_revoked:   boolean | null;
   freeze_authority_revoked: boolean | null;
@@ -932,6 +949,8 @@ export interface TokenRiskInputs {
   deployer_total_deployed:  number | null;
   kol_signal:               string | null;
   is_blacklisted:           boolean | null;
+  /** v1.21 — slot-window snipe rollup. Informational (does not move the score); null when not yet computed. */
+  sniper_footprint?:        SniperFootprint | null;
   [key: string]: unknown;
 }
 
@@ -1766,17 +1785,62 @@ export interface WalletStats {
   window_days:   number;
 }
 
+/** Rolling dump-cluster stats for a wallet (trailing 42 days, refreshed daily).
+ *  A "dump cohort" is a first-20 buyer appearance on a token that peaked <15min
+ *  after deploy. `null` on the parent means no cohort record for the wallet. */
+export interface DumpClusterStats {
+  dump_cohorts:   number;
+  runner_cohorts: number;
+  total_cohorts:  number;
+  as_of:          string;
+}
+
 export interface WalletFlags {
   is_kol:                   boolean;
   kol_name:                 string | null;
   is_alpha_tracked:         boolean;
-  bot_confidence:           number | null;
+  /** v1.21 type fix (breaking-ish): was wrongly typed `number | null` — the API
+   *  always returned null due to a server bug. Fixed; the real value is a
+   *  STRING enum, never a number. */
+  bot_confidence:           "low" | "medium" | "high" | "none" | null;
   alpha_win_rate:           number | null;
   alpha_net_pnl_sol:        number | null;
   alpha_tokens_traded:      number | null;
   is_deployer:              boolean;
   deployer_tokens_deployed: number | null;
   deployer_bonding_rate:    number | null;
+  /** v1.21 — wallet is on the known-sniper list. Pump.fun-pipeline scoped:
+   *  false = not observed, NOT verified clean. */
+  is_sniper?:               boolean;
+  /** v1.21 — wallet is on the bundler list (lifetime flag; never expires). */
+  is_bundler?:              boolean;
+  /** v1.21 — wallet is on the rolling-42d dump-cluster list. */
+  is_dumper?:               boolean;
+  /** v1.21 — cohort stats behind is_dumper, or null when no cohort record. */
+  dump_cluster?:            DumpClusterStats | null;
+}
+
+/* ── Wallet batch classify (v1.21) ── */
+
+/** One wallet's reputation flags in a batch-classify response. Values match the
+ *  `flags` block of GET /wallet/{address} exactly. All flags are pump.fun-
+ *  pipeline scoped — `false` means "not observed", NOT verified clean.
+ *  `is_bundler` is lifetime; `is_dumper` is rolling-42d. */
+export interface WalletClassification {
+  address:        string;
+  is_sniper:      boolean;
+  is_bundler:     boolean;
+  is_dumper:      boolean;
+  is_kol:         boolean;
+  kol_name:       string | null;
+  bot_confidence: "low" | "medium" | "high" | "none" | null;
+  dump_cluster:   DumpClusterStats | null;
+}
+
+export interface WalletBatchClassifyResponse {
+  wallets: WalletClassification[];
+  count:   number;
+  as_of:   string;
 }
 
 // v1.8.1 enrichments — additive, nullable, returned alongside stats + flags.
@@ -1993,6 +2057,154 @@ export interface WalletTradesResponse {
     since:      number;
     until:      number;
   };
+}
+
+/* ── Token trade tape (v1.21) ── */
+
+export interface TokenTradesParams {
+  /** 1–500, default 100. */
+  limit?:  number;
+  /** Opaque cursor from `next_cursor` of a previous response. */
+  cursor?: string;
+  action?: "buy" | "sell";
+  /** Filter to a single wallet address. */
+  wallet?: string;
+  /** Unix epoch seconds — defaults to the full history (see coverage.history_start). */
+  since?:  number;
+  /** Unix epoch seconds — default now. */
+  until?:  number;
+}
+
+export interface TokenTrade {
+  tx_signature:     string;
+  wallet_address:   string;
+  action:           "buy" | "sell";
+  sol_amount:       number;
+  token_amount:     number;
+  price_sol:        number | null;
+  price_usd:        number | null;
+  /** Rank among the token's earliest buyers (1 = first), or null. */
+  early_buyer_rank: number | null;
+  slot:             number | null;
+  block_time:       number;
+  traded_at:        string;
+}
+
+/** Mint-scoped trade tape. `coverage` is the honesty block: the tape starts
+ *  2026-04-12 (`history_start`, unix sec) and is pump.fun-pipeline scoped
+ *  (`scope`) — trades outside that pipeline are not on the tape. */
+export interface TokenTradesResponse {
+  mint:        string;
+  trades:      TokenTrade[];
+  next_cursor: string | null;
+  has_more:    boolean;
+  filters: {
+    action: "buy" | "sell" | null;
+    wallet: string | null;
+    since:  number;
+    until:  number;
+  };
+  coverage: {
+    history_start: number;
+    scope:         string;
+  };
+}
+
+/* ── Token top traders (v1.21) ── */
+
+export interface TokenTopTradersParams {
+  /** 1–25, default 25 (ULTRA keys may request up to 100 on the keyed route). */
+  limit?:          number;
+  /** Rank axis. Default "pnl". */
+  sort?:           "pnl" | "roi";
+  /** Lookback window in days (1–180, default 90). */
+  window_days?:    number;
+  /** Minimum SOL bought to qualify (default 0.1). */
+  min_bought_sol?: number;
+}
+
+/** One wallet in a top-traders response, enriched with our own reputation data
+ *  (KOL identity + alpha-wallet stats) so you can tell smart money from bots. */
+export interface TokenTopTrader {
+  rank:                number;
+  wallet:              string;
+  trades:              number;
+  buys:                number;
+  sells:               number;
+  bought_sol:          number;
+  sold_sol:            number;
+  realized_pnl_sol:    number;
+  unrealized_pnl_sol:  number;
+  total_pnl_sol:       number;
+  held_value_sol:      number;
+  roi:                 number | null;
+  still_holding:       boolean;
+  first_trade_at:      string;
+  last_trade_at:       string;
+  is_kol:              boolean;
+  kol_name:            string | null;
+  is_alpha_tracked:    boolean;
+  bot_confidence:      "low" | "medium" | "high" | "none" | null;
+  historical_win_rate: number | null;
+  historical_pnl_sol:  number | null;
+  historical_tokens:   number | null;
+}
+
+export interface TokenTopTradersResponse {
+  mint:        string;
+  sort:        "pnl" | "roi";
+  window_days: number;
+  traders:     TokenTopTrader[];
+  summary: {
+    returned:             number;
+    known_kols:           number;
+    known_alpha_wallets:  number;
+    net_realized_pnl_sol: number;
+  };
+}
+
+/* ── Deshred sniper feed (v1.21) ── */
+
+export interface SniperRecentParams {
+  /** Only deploys detected after this ISO-8601 timestamp. */
+  since?:         string;
+  /** Filter by deployer reputation tier (keyed ULTRA; PRO and x402 payers see elite/good). */
+  deployer_tier?: "elite" | "good" | "moderate" | "rising" | "cold" | "unranked";
+  /** Minimum deployer lifetime bond rate (0–1). */
+  min_bond_rate?: number;
+  /** Max results, 1–200 (default 50). */
+  limit?:         number;
+}
+
+/** One deshred-detected pump.fun deploy — surfaces ~500ms before on-chain
+ *  confirmation, so the payload carries no MC/logs/balances. */
+export interface SniperDeploy {
+  mint:                     string;
+  name:                     string | null;
+  symbol:                   string | null;
+  deployer_wallet:          string;
+  signature:                string;
+  slot:                     number;
+  detected_at:              string;
+  detection_region:         string;
+  detection_confirmed:      boolean;
+  deployer_tier:            string | null;
+  deployer_bond_rate:       number | null;
+  deployer_total_bonded:    number | null;
+  deployer_recent:          string | null;
+  deployer_runner_rate?:    number | null;
+  deployer_labeled_tokens?: number | null;
+  confirmed_on_chain:       boolean | null;
+  confirmed_at:             string | null;
+  /** v1.21 — slot-window snipe rollup (slots [-1..+3]). Null until the ~10-min
+   *  settle window has passed — absent, not zero. */
+  footprint?:               SniperFootprint | null;
+}
+
+export interface SniperRecentResponse {
+  deploys:          SniperDeploy[];
+  count:            number;
+  data_age_seconds: number | null;
 }
 
 /* ── Token pools (per-venue liquidity map) ── */
