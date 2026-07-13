@@ -488,7 +488,14 @@ export class MadeOnSolREST {
      * Transparent 0–100 token rug-risk/safety score (higher = riskier). Returns a
      * `band` (safe/caution/danger), an explainable `factors` array, and the raw
      * `inputs` (authorities, liquidity, transfer fee, launch cohort, deployer bond
-     * rate, KOL signal, blacklist). PRO/ULTRA only — BASIC receives HTTP 403.
+     * rate, KOL signal, blacklist). **v1.22:** also returns a top-level `dev` block
+     * (typed `TokenRiskDev | null`) — the deployer's self-activity on this mint:
+     * create-tx self-buy (`buy_sol`/`buy_tokens`/`buy_supply_pct`), post-create
+     * buys/sells rollup (`bought_tokens_after`, `sold_tokens`, `sold_sol`,
+     * `first_sell_at`/`last_sell_at`), plus LIVE on-chain holdings
+     * (`holdings_tokens`, `holdings_supply_pct`, `wallet_empty`) and a
+     * `transferred_out` flag (null = unknown, never a guess). `dev` is null when
+     * the mint has no pending_deploys row. PRO/ULTRA only — BASIC receives HTTP 403.
      */
     async tokenRisk(mint) {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/risk`);
@@ -517,6 +524,24 @@ export class MadeOnSolREST {
      */
     async tokenPools(mint) {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/pools`);
+    }
+    /**
+     * v1.22 — Per-pool price-impact / slippage: "how much SOL to move price N%"
+     * and impact per buy size, per pool (`GET /tokens/{mint}/depth`). Each
+     * computable pool carries `spot_price_sol`, `fee_pct`, a `quotes[]` entry per
+     * requested size (`tokens_out`, `avg_price_sol`, `price_impact_pct`), and
+     * `to_move_price` (SOL to move price 1%/5%/10%). Constant-product pools are
+     * served from stream reserves (`source: "stream"`, `reserves_age_ms`);
+     * pump.fun/bonk curves from a live read of the curve's VIRTUAL reserves
+     * (`source: "live_rpc"`). Pools we can't price honestly (concentrated
+     * CLMM/Orca/DLMM, Meteora-DBC, unclassified) come back in
+     * `unsupported_pools[]` with a `reason` instead of a wrong number. Impact is
+     * per-pool, NOT router-optimal. **KEYED (v1) — requires an `msk_` API key;
+     * there is no x402 route.** PRO/ULTRA only — BASIC receives HTTP 403.
+     * @param params `sizes` — SOL buy sizes to quote (max 8, each >0 and ≤10000; default [0.5, 1, 5, 10]).
+     */
+    async tokenDepth(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/depth`, undefined, params?.sizes && params.sizes.length > 0 ? { sizes: params.sizes.join(",") } : undefined);
     }
     /**
      * Bulk token rug-risk/safety scoring — up to 50 mints in one call (counts as 1
