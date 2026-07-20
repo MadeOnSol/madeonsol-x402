@@ -1,21 +1,25 @@
 async function resolveWebSocket(override) {
     if (override)
         return override;
-    const g = globalThis.WebSocket;
-    if (g)
-        return g;
-    // Node < 22: optional `ws` dependency.
+    // Prefer the `ws` package in Node: it exposes terminate() for an immediate
+    // socket teardown, so close() lets short-lived processes exit. The global
+    // (undici) WebSocket on Node 22+ keeps its TLS socket open after close() —
+    // it has no terminate() and no reachable socket handle — which hangs the
+    // event loop. In the browser this import rejects and we fall back to the
+    // platform's native WebSocket. Cast the specifier to string so TS doesn't
+    // require the module to be installed at build time.
     try {
-        // `ws` is an optional peer (only needed on Node < 22). Cast the specifier to
-        // string so TS doesn't require the module to be installed at build time.
         const mod = (await import("ws"));
         const impl = mod.default ?? mod.WebSocket;
         if (impl)
             return impl;
     }
     catch {
-        /* fall through */
+        /* not Node, or `ws` not installed — fall back to the platform WebSocket */
     }
+    const g = globalThis.WebSocket;
+    if (g)
+        return g;
     throw new Error("No WebSocket implementation available. On Node < 22, install `ws` (npm i ws) or pass { WebSocketImpl }.");
 }
 const OPEN = 1;
@@ -132,11 +136,18 @@ export class MadeOnSolStream {
             this.reconnectTimer = null;
         }
         this.clearHeartbeat();
+        const sock = this.ws;
+        this.ws = null;
         try {
-            this.ws?.close(1000, "client closed");
+            // `ws` package: terminate() destroys the underlying socket immediately so
+            // the process can exit. Native/undici WebSocket has no terminate() — fall
+            // back to a graceful close().
+            if (typeof sock?.terminate === "function")
+                sock.terminate();
+            else
+                sock?.close(1000, "client closed");
         }
         catch { /* ignore */ }
-        this.ws = null;
     }
     sendSubscribe() {
         const channels = Array.from(this.desired.channels);
