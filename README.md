@@ -11,7 +11,7 @@ TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligenc
 
 > Real-time Solana trading intelligence: track 1,069 KOL wallets with <3s latency, score 23,000+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1M+ early-buyer wallets (incl. dump-cluster detection), read bundle-cohort holdings (`held_pct_of_supply` — are the bundlers still holding?), verify any wallet's current on-chain holdings (with airdrop/insider `transfer_delta` detection), push every pump.fun graduation, and stream every DEX trade. Free tier: 200 requests/day, every endpoint — no signup payment. Get a key at [madeonsol.com/pricing](https://madeonsol.com/pricing).
 
-New customers get a 5-day free trial of Pro or Ultra when you pay by card — full access, nothing charged during the trial, cancel anytime. Start at https://madeonsol.com/pricing
+New customers get a 3-day free trial of Pro or Ultra when you pay by card — full access, nothing charged during the trial, cancel anytime. Start at https://madeonsol.com/pricing
 
 > **New in 1.23.0** — **Clean stream shutdown.** `rest.stream().close()` now fully tears down the underlying WebSocket so short-lived scripts exit promptly instead of hanging on a lingering socket. In Node the client now prefers the `ws` package (which exposes `terminate()`) and hard-terminates on close; the browser still uses the native WebSocket. No API changes — purely a lifecycle fix. (If you don't already depend on `ws` and want the fast exit on Node ≥22, `npm i ws`.)
 >
