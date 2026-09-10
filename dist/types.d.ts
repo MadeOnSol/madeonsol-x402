@@ -2988,6 +2988,114 @@ export interface DeployerHistoryResponse {
     wallet: string;
     snapshots: DeployerHistorySnapshot[];
 }
+/** The reputation snapshot current on the requested date. `snapshot_date` can be
+ *  earlier than `requested_date` (snapshots are write-on-change); `carried: true`
+ *  means the state was recorded earlier and had not changed by then. */
+export interface DeployerAsOfSnapshot {
+    snapshot_date: string;
+    carried: boolean;
+    tier: string | null;
+    is_tracked: boolean | null;
+    total_deployed: number | null;
+    total_bonded: number | null;
+    bonding_rate: number | null;
+    recent_bond_rate: number | null;
+    avg_peak_mc: number | null;
+    best_token_peak_mc: number | null;
+    captured_at: string | null;
+}
+/** A deployer's reputation exactly as it stood on `requested_date` — no look-ahead,
+ *  and never a synthesized row (`as_of: false, snapshot: null` before its first
+ *  snapshot). PRO/ULTRA only. */
+export interface DeployerAsOfResponse {
+    is_deployer: boolean;
+    wallet: string;
+    requested_date: string;
+    as_of: boolean;
+    snapshot: DeployerAsOfSnapshot | null;
+    first_snapshot_date: string | null;
+    note: string;
+}
+/** sol / usdc are summed separately (never mixed); usd is null (not 0) when a SOL
+ *  amount exists and no SOL price was available. */
+export interface DeployerRewardsMoney {
+    sol: number;
+    usdc: number;
+    usd: number | null;
+}
+export interface DeployerRewardsRail extends DeployerRewardsMoney {
+    count: number;
+    first_at: string | null;
+    last_at: string | null;
+}
+export interface DeployerRewardsSocial {
+    platform: number;
+    user_id: string;
+}
+export interface DeployerRewardsTopToken {
+    mint: string;
+    quote: "SOL" | "USDC";
+    total: number;
+    total_usd: number | null;
+    to_self: number;
+    to_self_usd: number | null;
+    payouts: number;
+    recipients: number;
+    last_at: string;
+}
+export interface DeployerRewardsTopRecipient {
+    address: string;
+    quote: "SOL" | "USDC";
+    total: number;
+    total_usd: number | null;
+    tokens: number;
+    payouts: number;
+    last_at: string;
+    is_self: boolean;
+    is_social_pda: boolean;
+    social: DeployerRewardsSocial | null;
+}
+/**
+ * pump.fun creator-fee rewards for a wallet, answered two ways that are never
+ * merged: `collected` (what actually reached the wallet) and `attributed` (every
+ * payout on the tokens it deployed, split `to_self`/`to_others`). Works for
+ * non-deployers too (`is_deployer: false`, `attributed` empty). PRO/ULTRA only.
+ */
+export interface DeployerRewardsResponse {
+    wallet: string;
+    is_deployer: boolean;
+    /** Tokens attributed to this wallet in our token table — the universe
+     *  `attributed` is computed over. NOT the deployer profile's total deploy count. */
+    tokens_in_scope: number;
+    collected: DeployerRewardsMoney & {
+        direct_claims: DeployerRewardsRail & {
+            window_days: number;
+        };
+        social_claims: DeployerRewardsRail;
+        share_payouts: DeployerRewardsRail & {
+            tokens: number;
+            on_own_tokens: DeployerRewardsMoney;
+        };
+    };
+    attributed: DeployerRewardsRail & {
+        to_self: DeployerRewardsMoney;
+        to_others: DeployerRewardsMoney;
+        redirected_pct: number | null;
+        tokens_with_payouts: number;
+        distributions: number;
+        recipients: number;
+    };
+    top_tokens: DeployerRewardsTopToken[];
+    top_recipients: DeployerRewardsTopRecipient[];
+    quote: {
+        sol_usd: number | null;
+    };
+    coverage: {
+        payouts_since: string;
+        direct_claims_window_days: number;
+        note: string;
+    };
+}
 /** Reputation grade. `unranked` = too few deploys to grade, not "bad". */
 export type DeployerTier = "elite" | "good" | "rising" | "neutral" | "spammer" | "unranked";
 export interface DeployerTierCounts {
