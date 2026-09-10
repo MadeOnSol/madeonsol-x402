@@ -368,6 +368,78 @@ export class MadeOnSolREST {
     async kolPnl(wallet, params) {
         return this.request("GET", `/kol/${encodeURIComponent(wallet)}/pnl`, undefined, params);
     }
+    // ── 2026-09-10 parity fix: this class covered webhooks/streaming/rules but
+    // never got the free-tier/live-feed reads that MadeOnSolX402, MCP, ElizaOS
+    // and Solana Agent Kit all already expose — found by the agentic-infra gap
+    // audit. Same param/response types as their MadeOnSolX402 counterparts.
+    /** Real-time KOL trade feed from 1,000+ tracked wallets. */
+    async kolFeed(params) {
+        return this.request("GET", "/kol/feed", undefined, params);
+    }
+    /** KOL convergence signals — tokens being accumulated by multiple KOLs. */
+    async kolCoordination(params) {
+        return this.request("GET", "/kol/coordination", undefined, params);
+    }
+    /** KOL performance rankings by PnL and win rate. */
+    async kolLeaderboard(params) {
+        return this.request("GET", "/kol/leaderboard", undefined, params);
+    }
+    /** KOL affinity matrix — which KOLs frequently co-trade the same tokens. */
+    async kolPairs(params) {
+        return this.request("GET", "/kol/pairs", undefined, params);
+    }
+    /** KOL momentum tokens — tokens with accelerating KOL buy interest. */
+    async kolHotTokens(params) {
+        return this.request("GET", "/kol/tokens/hot", undefined, params);
+    }
+    /** Tokens ranked by KOL buy volume. Sub-hour periods require PRO/ULTRA. */
+    async kolTrendingTokens(params) {
+        return this.request("GET", "/kol/tokens/trending", undefined, params);
+    }
+    /** Ranked KOL first-buyer order for a token. PRO+ adds percentile_pnl_7d. */
+    async kolTokenEntryOrder(mint, params) {
+        return this.request("GET", `/kol/tokens/${encodeURIComponent(mint)}/entry-order`, undefined, params);
+    }
+    /** Side-by-side comparison of 2-5 KOL wallets. PRO+ adds overlap tokens (30d). */
+    async kolCompareWallets(params) {
+        return this.request("GET", "/kol/compare", undefined, { wallets: params.wallets.join(",") });
+    }
+    /** Live KOL alert feed — consensus clusters, fresh-token buys, heating-up wallets. */
+    async kolAlertsRecent(params) {
+        const { types, ...rest } = params ?? {};
+        const flat = { ...rest };
+        if (types && types.length > 0)
+            flat.types = types.join(",");
+        return this.request("GET", "/kol/alerts/recent", undefined, flat);
+    }
+    /** Real-time alerts from elite Pump.fun deployers. */
+    async deployerAlerts(params) {
+        return this.request("GET", "/deployer-hunter/alerts", undefined, params);
+    }
+    /** Bulk token snapshot for up to 50 mints — cheaper than N sequential token() calls. */
+    async tokenBatch(mints) {
+        return this.request("POST", "/token/batch", { mints });
+    }
+    /** Bulk buyer-quality score for up to 50 mints. */
+    async tokensBatchBuyerQuality(mints) {
+        return this.request("POST", "/tokens/batch/buyer-quality", { mints });
+    }
+    /** Recent deploys from one specific tracked deployer wallet. */
+    async sniperByDeployer(wallet, params) {
+        return this.request("GET", `/sniper/by-deployer/${encodeURIComponent(wallet)}`, undefined, params);
+    }
+    /** List your custom sniper watchlist (tracked deployer wallets). PRO+/ULTRA. */
+    async sniperWatchlist() {
+        return this.request("GET", "/sniper/watchlist");
+    }
+    /** Add one or many deployer wallets to your sniper watchlist. PRO+/ULTRA. */
+    async sniperWatchlistAdd(params) {
+        return this.request("POST", "/sniper/watchlist", params);
+    }
+    /** Remove a deployer wallet from your sniper watchlist. PRO+/ULTRA. */
+    async sniperWatchlistRemove(wallet) {
+        return this.request("DELETE", `/sniper/watchlist/${encodeURIComponent(wallet)}`);
+    }
     /** Deployer skill curve — streaks, rolling bond rate, improvement trend. */
     async deployerTrajectory(wallet) {
         return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/trajectory`);

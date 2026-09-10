@@ -226,6 +226,48 @@ export declare class MadeOnSolREST {
     kolPnl(wallet: string, params?: {
         period?: string;
     }): Promise<unknown>;
+    /** Real-time KOL trade feed from 1,000+ tracked wallets. */
+    kolFeed(params?: KolFeedParams): Promise<KolFeedResponse>;
+    /** KOL convergence signals — tokens being accumulated by multiple KOLs. */
+    kolCoordination(params?: KolCoordinationParams): Promise<KolCoordinationResponse>;
+    /** KOL performance rankings by PnL and win rate. */
+    kolLeaderboard(params?: KolLeaderboardParams): Promise<KolLeaderboardResponse>;
+    /** KOL affinity matrix — which KOLs frequently co-trade the same tokens. */
+    kolPairs(params?: KolPairsParams): Promise<KolPairsResponse>;
+    /** KOL momentum tokens — tokens with accelerating KOL buy interest. */
+    kolHotTokens(params?: KolHotTokensParams): Promise<KolHotTokensResponse>;
+    /** Tokens ranked by KOL buy volume. Sub-hour periods require PRO/ULTRA. */
+    kolTrendingTokens(params?: {
+        period?: string;
+        min_kols?: number;
+        limit?: number;
+    }): Promise<unknown>;
+    /** Ranked KOL first-buyer order for a token. PRO+ adds percentile_pnl_7d. */
+    kolTokenEntryOrder(mint: string, params?: KolEntryOrderParams): Promise<KolEntryOrderResponse>;
+    /** Side-by-side comparison of 2-5 KOL wallets. PRO+ adds overlap tokens (30d). */
+    kolCompareWallets(params: KolCompareParams): Promise<KolCompareResponse>;
+    /** Live KOL alert feed — consensus clusters, fresh-token buys, heating-up wallets. */
+    kolAlertsRecent(params?: KolAlertsParams): Promise<KolAlertsResponse>;
+    /** Real-time alerts from elite Pump.fun deployers. */
+    deployerAlerts(params?: DeployerAlertsParams): Promise<DeployerAlertsResponse>;
+    /** Bulk token snapshot for up to 50 mints — cheaper than N sequential token() calls. */
+    tokenBatch(mints: string[]): Promise<unknown>;
+    /** Bulk buyer-quality score for up to 50 mints. */
+    tokensBatchBuyerQuality(mints: string[]): Promise<unknown>;
+    /** Recent deploys from one specific tracked deployer wallet. */
+    sniperByDeployer(wallet: string, params?: {
+        limit?: number;
+    }): Promise<unknown>;
+    /** List your custom sniper watchlist (tracked deployer wallets). PRO+/ULTRA. */
+    sniperWatchlist(): Promise<unknown>;
+    /** Add one or many deployer wallets to your sniper watchlist. PRO+/ULTRA. */
+    sniperWatchlistAdd(params: {
+        wallet?: string;
+        wallets?: string[];
+        label?: string;
+    }): Promise<unknown>;
+    /** Remove a deployer wallet from your sniper watchlist. PRO+/ULTRA. */
+    sniperWatchlistRemove(wallet: string): Promise<unknown>;
     /** Deployer skill curve — streaks, rolling bond rate, improvement trend. */
     deployerTrajectory(wallet: string): Promise<DeployerTrajectoryResponse>;
     /**

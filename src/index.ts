@@ -902,6 +902,94 @@ export class MadeOnSolREST {
     return this.request("GET", `/kol/${encodeURIComponent(wallet)}/pnl`, undefined, params);
   }
 
+  // ── 2026-09-10 parity fix: this class covered webhooks/streaming/rules but
+  // never got the free-tier/live-feed reads that MadeOnSolX402, MCP, ElizaOS
+  // and Solana Agent Kit all already expose — found by the agentic-infra gap
+  // audit. Same param/response types as their MadeOnSolX402 counterparts.
+
+  /** Real-time KOL trade feed from 1,000+ tracked wallets. */
+  async kolFeed(params?: KolFeedParams): Promise<KolFeedResponse> {
+    return this.request("GET", "/kol/feed", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** KOL convergence signals — tokens being accumulated by multiple KOLs. */
+  async kolCoordination(params?: KolCoordinationParams): Promise<KolCoordinationResponse> {
+    return this.request("GET", "/kol/coordination", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** KOL performance rankings by PnL and win rate. */
+  async kolLeaderboard(params?: KolLeaderboardParams): Promise<KolLeaderboardResponse> {
+    return this.request("GET", "/kol/leaderboard", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** KOL affinity matrix — which KOLs frequently co-trade the same tokens. */
+  async kolPairs(params?: KolPairsParams): Promise<KolPairsResponse> {
+    return this.request("GET", "/kol/pairs", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** KOL momentum tokens — tokens with accelerating KOL buy interest. */
+  async kolHotTokens(params?: KolHotTokensParams): Promise<KolHotTokensResponse> {
+    return this.request("GET", "/kol/tokens/hot", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** Tokens ranked by KOL buy volume. Sub-hour periods require PRO/ULTRA. */
+  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number }): Promise<unknown> {
+    return this.request("GET", "/kol/tokens/trending", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** Ranked KOL first-buyer order for a token. PRO+ adds percentile_pnl_7d. */
+  async kolTokenEntryOrder(mint: string, params?: KolEntryOrderParams): Promise<KolEntryOrderResponse> {
+    return this.request("GET", `/kol/tokens/${encodeURIComponent(mint)}/entry-order`, undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** Side-by-side comparison of 2-5 KOL wallets. PRO+ adds overlap tokens (30d). */
+  async kolCompareWallets(params: KolCompareParams): Promise<KolCompareResponse> {
+    return this.request("GET", "/kol/compare", undefined, { wallets: params.wallets.join(",") });
+  }
+
+  /** Live KOL alert feed — consensus clusters, fresh-token buys, heating-up wallets. */
+  async kolAlertsRecent(params?: KolAlertsParams): Promise<KolAlertsResponse> {
+    const { types, ...rest } = params ?? {};
+    const flat: Record<string, string | number | undefined> = { ...(rest as Record<string, string | number | undefined>) };
+    if (types && types.length > 0) flat.types = types.join(",");
+    return this.request("GET", "/kol/alerts/recent", undefined, flat);
+  }
+
+  /** Real-time alerts from elite Pump.fun deployers. */
+  async deployerAlerts(params?: DeployerAlertsParams): Promise<DeployerAlertsResponse> {
+    return this.request("GET", "/deployer-hunter/alerts", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** Bulk token snapshot for up to 50 mints — cheaper than N sequential token() calls. */
+  async tokenBatch(mints: string[]): Promise<unknown> {
+    return this.request("POST", "/token/batch", { mints });
+  }
+
+  /** Bulk buyer-quality score for up to 50 mints. */
+  async tokensBatchBuyerQuality(mints: string[]): Promise<unknown> {
+    return this.request("POST", "/tokens/batch/buyer-quality", { mints });
+  }
+
+  /** Recent deploys from one specific tracked deployer wallet. */
+  async sniperByDeployer(wallet: string, params?: { limit?: number }): Promise<unknown> {
+    return this.request("GET", `/sniper/by-deployer/${encodeURIComponent(wallet)}`, undefined, params as Record<string, number | undefined>);
+  }
+
+  /** List your custom sniper watchlist (tracked deployer wallets). PRO+/ULTRA. */
+  async sniperWatchlist(): Promise<unknown> {
+    return this.request("GET", "/sniper/watchlist");
+  }
+
+  /** Add one or many deployer wallets to your sniper watchlist. PRO+/ULTRA. */
+  async sniperWatchlistAdd(params: { wallet?: string; wallets?: string[]; label?: string }): Promise<unknown> {
+    return this.request("POST", "/sniper/watchlist", params);
+  }
+
+  /** Remove a deployer wallet from your sniper watchlist. PRO+/ULTRA. */
+  async sniperWatchlistRemove(wallet: string): Promise<unknown> {
+    return this.request("DELETE", `/sniper/watchlist/${encodeURIComponent(wallet)}`);
+  }
+
   /** Deployer skill curve — streaks, rolling bond rate, improvement trend. */
   async deployerTrajectory(wallet: string): Promise<DeployerTrajectoryResponse> {
     return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/trajectory`);
