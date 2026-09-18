@@ -9,7 +9,9 @@
 
 TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligence API.
 
-> Real-time Solana trading intelligence: track 1,069 KOL wallets with <3s latency on paid keys and x402 pay-per-call (free-tier live feeds are 5-min delayed), score 23,000+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1M+ early-buyer wallets (incl. dump-cluster detection), read bundle-cohort holdings (`held_pct_of_supply` — are the bundlers still holding?), verify any wallet's current on-chain holdings (with airdrop/insider `transfer_delta` detection), push every pump.fun graduation, and stream every DEX trade. Free tier: 200 requests/day across 40+ endpoints (live feeds 5-min delayed) — no signup payment. Get a key at [madeonsol.com/pricing](https://madeonsol.com/pricing).
+<!-- Stats below are deliberate conservative floors kept in sync with the site's canonical labels (src/lib/constants.ts KOL_COUNT_LABEL / DEPLOYERS_PROFILED_LABEL / ALPHA_WALLETS_LABEL), rounded down from a live count measured on a known date and bumped only when the real count crosses the next threshold -- never the exact live number, which changes every minute. Do not replace with a live/volatile count. -->
+
+> Real-time Solana trading intelligence: track 2,000+ KOL wallets with <3s latency on paid keys and x402 pay-per-call (free-tier live feeds are 5-min delayed), score 85K+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1.5M+ early-buyer wallets (incl. dump-cluster detection), read bundle-cohort holdings (`held_pct_of_supply` — are the bundlers still holding?), verify any wallet's current on-chain holdings (with airdrop/insider `transfer_delta` detection), push every pump.fun graduation, and stream every DEX trade. Free tier: 200 requests/day across 40+ endpoints (live feeds 5-min delayed) — no signup payment. Get a key at [madeonsol.com/pricing](https://madeonsol.com/pricing).
 
 > **New in 1.30.0 — REST/x402 parity fix, top traders, and sniper detection.** Found by an internal agentic-infra coverage audit: `MadeOnSolREST` never got the free-tier/live-feed reads that `MadeOnSolX402` already had (`kolFeed`, `kolCoordination`, `kolLeaderboard`, `deployerAlerts`, `kolPairs`, `kolHotTokens`, `kolTrendingTokens`, `kolTokenEntryOrder`, `kolCompareWallets`, `kolAlertsRecent`), plus `tokenBatch`, `tokensBatchBuyerQuality`, and the sniper feature (`sniperByDeployer`, `sniperWatchlist`, `sniperWatchlistAdd`, `sniperWatchlistRemove` — `sniperRecent` already existed). `rest.tokenTopTraders(mint, params?)` — previously present but with no MCP/ElizaOS/SAK tool anywhere — and `rest.updateWebhook(id, params)` (PATCH) round out the surface.
 >
@@ -162,7 +164,7 @@ console.log(rest.lastRateLimit); // { limit, remaining, reset, requestId }
 
 ### Alpha wallet intelligence
 
-Scored from 1M+ early-buyer records (wallets seen in the first 20 buyers of Pump.fun tokens).
+Scored from 1.5M+ early-buyer records (wallets seen in the first 20 buyers of Pump.fun tokens).
 
 | Method | Tier | Description |
 |---|---|---|
