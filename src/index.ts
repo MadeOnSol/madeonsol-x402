@@ -1,3 +1,5 @@
+import { SolanaPaymentBudget, createSolanaPaidFetch, type SolanaPaymentPolicy } from "./solana-payment.js";
+export { SolanaPaymentBudget, type SolanaPaymentPolicy, type SolanaPaymentProposal } from "./solana-payment.js";
 import type {
   KolFeedParams,
   KolFeedResponse,
@@ -446,18 +448,21 @@ function resolveAuthHeaders(mode: AuthMode, key: string): Record<string, string>
 
 /* ── Main client options ── */
 
-interface MadeOnSolClientOptions {
+export interface MadeOnSolClientOptions {
   /** MadeOnSol API key — get one free at https://madeonsol.com/pricing. */
   apiKey?: string;
   /** Base58-encoded Solana private key for x402 USDC micropayments (for AI agents). */
   privateKey?: string;
+  /** Required for keyless payments; explicit trusted merchant and spending limits. */
+  paymentPolicy?: SolanaPaymentPolicy;
   /** API base URL (default: https://madeonsol.com) */
   baseUrl?: string;
 }
 
 /** @deprecated Use MadeOnSolClient instead */
-interface MadeOnSolX402Options {
+export interface MadeOnSolX402Options {
   privateKey: string;
+  paymentPolicy: SolanaPaymentPolicy;
   baseUrl?: string;
 }
 
@@ -467,6 +472,9 @@ export class MadeOnSolX402 {
   private authMode: AuthMode;
   private authHeaders: Record<string, string>;
   private ready: Promise<void>;
+  private paymentBudget?: SolanaPaymentBudget;
+
+  get authorizedAmountAtomic(): string { return this.paymentBudget?.authorizedAmountAtomic ?? "0"; }
 
   constructor(opts: MadeOnSolX402Options | MadeOnSolClientOptions) {
     this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
@@ -489,21 +497,15 @@ export class MadeOnSolX402 {
         );
         throw new Error("Provide apiKey or privateKey. Get a free API key at https://madeonsol.com/pricing");
       }
+      this.paymentBudget = new SolanaPaymentBudget(clientOpts.paymentPolicy!);
       this.ready = this.initX402(pk);
+      // Construction may precede the first request; retain the rejection for that request.
+      void this.ready.catch(() => {});
     }
   }
 
   private async initX402(privateKey: string): Promise<void> {
-    const { wrapFetchWithPayment } = await import("@x402/fetch");
-    const { x402Client } = await import("@x402/core/client");
-    const { ExactSvmScheme } = await import("@x402/svm/exact/client");
-    const { createKeyPairSignerFromBytes } = await import("@solana/kit");
-    const { base58 } = await import("@scure/base");
-
-    const signer = await createKeyPairSignerFromBytes(base58.decode(privateKey));
-    const client = new x402Client();
-    client.register("solana:*", new ExactSvmScheme(signer));
-    this.paidFetch = wrapFetchWithPayment(fetch, client);
+    this.paidFetch = await createSolanaPaidFetch(privateKey, this.paymentBudget!, this.baseUrl);
   }
 
   private async request<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
@@ -786,12 +788,12 @@ export class MadeOnSolX402 {
 }
 
 /** Create a client with API key auth (simplest option). */
-export function createClient(apiKeyOrPrivateKey: string, baseUrl?: string): MadeOnSolX402 {
+export function createClient(apiKeyOrPrivateKey: string, baseUrl?: string, paymentPolicy?: SolanaPaymentPolicy): MadeOnSolX402 {
   // Auto-detect: msk_ prefix = API key, otherwise assume private key for backwards compat
   if (apiKeyOrPrivateKey.startsWith("msk_")) {
     return new MadeOnSolX402({ apiKey: apiKeyOrPrivateKey, baseUrl });
   }
-  return new MadeOnSolX402({ privateKey: apiKeyOrPrivateKey, baseUrl });
+  return new MadeOnSolX402({ privateKey: apiKeyOrPrivateKey, baseUrl, paymentPolicy });
 }
 
 /* ── REST API client (for webhooks + streaming) ── */

@@ -13,6 +13,8 @@ TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligenc
 
 > Real-time Solana trading intelligence: track 2,000+ KOL wallets with <3s latency on paid keys and x402 pay-per-call (free-tier live feeds are 5-min delayed), score 85K+ Pump.fun deployers, surface deshred deploy signals ~500ms before on-chain confirmation, score 1.5M+ early-buyer wallets (incl. dump-cluster detection), read bundle-cohort holdings (`held_pct_of_supply` — are the bundlers still holding?), verify any wallet's current on-chain holdings (with airdrop/insider `transfer_delta` detection), push every pump.fun graduation, and stream every DEX trade. Free tier: 200 requests/day across 40+ endpoints (live feeds 5-min delayed) — no signup payment. Get a key at [madeonsol.com/pricing](https://madeonsol.com/pricing).
 
+> **New in 2.0.0 — BREAKING for keyless (x402) mode only: an explicit `paymentPolicy` is required (security fix, SDK-01).** `new MadeOnSolX402({ privateKey, paymentPolicy: { payTo, feePayer, maxAmountAtomic, maxTotalAmountAtomic, rpcUrl } })` (optional `beforePayment`); the deprecated `MadeOnSolX402Options` type gains the same required field. Before, keyless mode signed whatever Solana USDC amount, recipient and fee payer a 402 challenge asked for. Now every challenge is checked BEFORE signing against a trusted merchant `payTo`, a trusted facilitator `feePayer` (which must differ from your wallet), the USDC mint, `solana:5eykt…` mainnet, the `exact` scheme, a per-call cap and a lifetime cap. Use the canonical values in the keyless section below; caps must be at least `20000` (0.02 USDC) per call to reach every endpoint. The budget is per client instance / process: not wallet-wide, not shared between processes, reset on a new instance or restart. Keyless requires the base URL exactly `https://madeonsol.com`. **API-key (`msk_`) users: no change, no new config.**
+
 > **New in 1.30.0 — REST/x402 parity fix, top traders, and sniper detection.** Found by an internal agentic-infra coverage audit: `MadeOnSolREST` never got the free-tier/live-feed reads that `MadeOnSolX402` already had (`kolFeed`, `kolCoordination`, `kolLeaderboard`, `deployerAlerts`, `kolPairs`, `kolHotTokens`, `kolTrendingTokens`, `kolTokenEntryOrder`, `kolCompareWallets`, `kolAlertsRecent`), plus `tokenBatch`, `tokensBatchBuyerQuality`, and the sniper feature (`sniperByDeployer`, `sniperWatchlist`, `sniperWatchlistAdd`, `sniperWatchlistRemove` — `sniperRecent` already existed). `rest.tokenTopTraders(mint, params?)` — previously present but with no MCP/ElizaOS/SAK tool anywhere — and `rest.updateWebhook(id, params)` (PATCH) round out the surface.
 >
 > **New in 1.29.0 — deployer reputation as-of a date, and creator-fee rewards.** `rest.deployerAsOf(wallet, opts?)` (typed `DeployerAsOfResponse`) binds `GET /deployer-hunter/{wallet}/as-of`: the deployer's reputation exactly as it stood on `opts.date` (default today, UTC) — the latest write-on-change snapshot at or before it, so a backtest sees only what was knowable then. `snapshot.snapshot_date` can predate the requested date (write-on-change); `snapshot.carried: true` marks that. No snapshot at or before the date → `as_of: false, snapshot: null` — nothing is ever synthesized. `date` must be ≥ 2026-04-07 and not in the future. `rest.deployerRewards(wallet)` (typed `DeployerRewardsResponse`) binds `GET /deployer-hunter/{wallet}/rewards`: pump.fun creator-fee rewards, answered two ways that are never merged — `collected` (what actually reached the wallet: direct vault claims kept 90 days, social-handle claims, shareholder payouts on **any** token) and `attributed` (every payout on the tokens it **deployed**, split `to_self`/`to_others` + `redirected_pct`). Every money field is `{ sol, usdc, usd }`; `usd` is `null` (never a silent 0) when a SOL amount exists and no SOL price was available. `top_tokens`/`top_recipients` (≤10, USD-sorted) show where attributed fees went, recipients flagged `is_self`/`is_social_pda`. Works for non-deployers too (`is_deployer: false`, `attributed` empty). **PRO+, KEYED (v1) only — `msk_` API key, no x402 route.**
@@ -105,7 +107,8 @@ import { createClient } from "madeonsol-x402";
 const client = createClient("msk_your_api_key_here");
 
 // Option 2: x402 micropayments (auto-detected when no msk_ prefix)
-// const client = createClient(process.env.SOLANA_PRIVATE_KEY!);
+// const client = createClient(process.env.SVM_PRIVATE_KEY!, undefined, paymentPolicy);
+// See the required paymentPolicy example below.
 
 const { trades } = await client.kolFeed({ limit: 10 });
 console.log(trades);
@@ -113,14 +116,40 @@ console.log(trades);
 
 ### Advanced initialization
 
-```ts
-import { MadeOnSolX402 } from "madeonsol-x402";
+Keyless mode requires `paymentPolicy`. API-key mode does not initialize signing or require these settings.
 
-const client = new MadeOnSolX402({
-  apiKey: "msk_...",        // OR
-  privateKey: "base58...",  // x402 micropayments
-});
+```ts
+import { MadeOnSolX402, type SolanaPaymentPolicy } from "madeonsol-x402";
+
+const paymentPolicy: SolanaPaymentPolicy = {
+  payTo: "GLu63pRCYrp4BJu5P5ciYKxgeZFW9c8TJ8jWzK3TB9AR",   // canonical merchant (see below)
+  feePayer: "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4", // PayAI facilitator fee payer (see below)
+  maxAmountAtomic: "20000",               // 0.02 USDC per authorization (the highest Solana leg)
+  maxTotalAmountAtomic: "1000000",         // 1 USDC across this client's lifetime
+  rpcUrl: process.env.SVM_RPC_URL!,        // your trusted HTTPS RPC
+  timeoutMs: 30_000,
+  // Optional additional approval; literal true is required if this hook is set.
+  beforePayment: async proposal => BigInt(proposal.amountAtomic) <= 20000n,
+};
+const client = new MadeOnSolX402({ privateKey: process.env.SVM_PRIVATE_KEY!, paymentPolicy });
+// Equivalent: createClient(privateKey, undefined, paymentPolicy).
+console.log(client.authorizedAmountAtomic);
 ```
+
+**Canonical MadeOnSol values (Solana mainnet USDC).** Pinned here (GitHub + npm README) so you do not have to take them from a 402:
+- merchant `payTo` / `X402_PAY_TO`: `GLu63pRCYrp4BJu5P5ciYKxgeZFW9c8TJ8jWzK3TB9AR` (also shown on https://madeonsol.com/x402 and https://madeonsol.com/.well-known/x402)
+- facilitator `feePayer` / `X402_FEE_PAYER`: `2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4`. This is the fee payer of **PayAI**, the third-party facilitator MadeOnSol's Solana rail uses. If PayAI rotates it, keyless calls fail closed (the client refuses to sign) until you update this value; a MadeOnSol release will announce the new one.
+- prices: Solana legs are 5000–20000 atomic (0.005–0.02 USDC), so `maxAmountAtomic` / `X402_MAX_AMOUNT_ATOMIC` must be at least `20000` to reach every endpoint.
+
+The budget is per client instance / process: not wallet-wide, not shared between processes, reset when a new instance or process starts. Keyless mode requires the base URL exactly `https://madeonsol.com`.
+
+**Breaking keyless upgrade:** missing policy now fails closed. Only exact mainnet USDC payments to the configured merchant and facilitator are signed. The agent cannot also be the facilitator fee payer. URLs must use HTTPS; requests stay on the configured API origin and redirects are refused. There is no public RPC fallback. Amounts use positive integer strings or bigint, never floating-point numbers; USDC has 6 decimals. Choose caps for the endpoints you use.
+
+Reuse one long-lived client. Concurrent calls share its allowance. An unsigned approval denial releases its reservation; once payment creation starts, the allowance remains consumed even after RPC/signing/network errors or an ambiguous response. This is **authorized attempts, not settled spend**, with no automatic refund or replay. The frozen `beforePayment` proposal cannot override built-in checks.
+
+The 30-second default bounds challenge reading, approval, signing waits and submission. Late RPC results cannot invoke the signer after timeout. Solana transaction validity still follows the signed recent blockhash; the client deadline cannot revoke a proof already sent. Response-body consumption after returned headers is not covered by this deadline.
+
+A new client or process starts a new allowance. These limits are not a durable, wallet-wide budget; coordinate externally when multiple agents/processes share a wallet. API-key behavior and precedence are unchanged.
 
 ## x402 Endpoints (per-request micropayments)
 

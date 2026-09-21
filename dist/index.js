@@ -1,3 +1,5 @@
+import { SolanaPaymentBudget, createSolanaPaidFetch } from "./solana-payment.js";
+export { SolanaPaymentBudget } from "./solana-payment.js";
 import { MadeOnSolStream } from "./stream.js";
 import { VERSION } from "./version.js";
 export { MadeOnSolStream } from "./stream.js";
@@ -14,6 +16,8 @@ export class MadeOnSolX402 {
     authMode;
     authHeaders;
     ready;
+    paymentBudget;
+    get authorizedAmountAtomic() { return this.paymentBudget?.authorizedAmountAtomic ?? "0"; }
     constructor(opts) {
         this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
         this.authHeaders = {};
@@ -33,19 +37,14 @@ export class MadeOnSolX402 {
                     "  → Then: createClient(process.env.MADEONSOL_API_KEY)\n");
                 throw new Error("Provide apiKey or privateKey. Get a free API key at https://madeonsol.com/pricing");
             }
+            this.paymentBudget = new SolanaPaymentBudget(clientOpts.paymentPolicy);
             this.ready = this.initX402(pk);
+            // Construction may precede the first request; retain the rejection for that request.
+            void this.ready.catch(() => { });
         }
     }
     async initX402(privateKey) {
-        const { wrapFetchWithPayment } = await import("@x402/fetch");
-        const { x402Client } = await import("@x402/core/client");
-        const { ExactSvmScheme } = await import("@x402/svm/exact/client");
-        const { createKeyPairSignerFromBytes } = await import("@solana/kit");
-        const { base58 } = await import("@scure/base");
-        const signer = await createKeyPairSignerFromBytes(base58.decode(privateKey));
-        const client = new x402Client();
-        client.register("solana:*", new ExactSvmScheme(signer));
-        this.paidFetch = wrapFetchWithPayment(fetch, client);
+        this.paidFetch = await createSolanaPaidFetch(privateKey, this.paymentBudget, this.baseUrl);
     }
     async request(path, params) {
         await this.ready;
@@ -282,12 +281,12 @@ export class MadeOnSolX402 {
     }
 }
 /** Create a client with API key auth (simplest option). */
-export function createClient(apiKeyOrPrivateKey, baseUrl) {
+export function createClient(apiKeyOrPrivateKey, baseUrl, paymentPolicy) {
     // Auto-detect: msk_ prefix = API key, otherwise assume private key for backwards compat
     if (apiKeyOrPrivateKey.startsWith("msk_")) {
         return new MadeOnSolX402({ apiKey: apiKeyOrPrivateKey, baseUrl });
     }
-    return new MadeOnSolX402({ privateKey: apiKeyOrPrivateKey, baseUrl });
+    return new MadeOnSolX402({ privateKey: apiKeyOrPrivateKey, baseUrl, paymentPolicy });
 }
 /**
  * REST API client for webhook management, WebSocket streaming tokens, alpha
