@@ -11,7 +11,7 @@
  * the optional `ws` package) and the browser (native WebSocket). Zero required
  * dependencies.
  */
-import type { StreamToken } from "./types";
+import type { StreamToken } from "./types.js";
 
 /** Channels you can subscribe to. */
 export type StreamChannel =

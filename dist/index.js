@@ -666,8 +666,10 @@ export class MadeOnSolREST {
      * buys/sells rollup (`bought_tokens_after`, `sold_tokens`, `sold_sol`,
      * `first_sell_at`/`last_sell_at`), plus LIVE on-chain holdings
      * (`holdings_tokens`, `holdings_supply_pct`, `wallet_empty`) and a
-     * `transferred_out` flag (null = unknown, never a guess). `dev` is null when
-     * the mint has no pending_deploys row. PRO/ULTRA only — BASIC receives HTTP 403.
+     * `transfer_status` (suspected / none_detected / unknown; `transferred_out` is its
+     * deprecated boolean view). `dev` is null when the mint has no pending_deploys
+     * row. Score v2: see `assessment`; a failed score-critical read is HTTP 503
+     * `risk_inputs_unavailable`. PRO/ULTRA only — BASIC receives HTTP 403.
      */
     async tokenRisk(mint) {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/risk`);

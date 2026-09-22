@@ -11,7 +11,7 @@
  * the optional `ws` package) and the browser (native WebSocket). Zero required
  * dependencies.
  */
-import type { StreamToken } from "./types";
+import type { StreamToken } from "./types.js";
 /** Channels you can subscribe to. */
 export type StreamChannel = "kol:trades" | "kol:coordination" | "kol:first_touches" | "deployer:alerts" | "wallet_tracker:events" | "copytrade:signals" | "price_alert:events" | "sniper:deploys" | "token:graduations" | "token:locks" | "token:fee_claims" | "token:surges";
 /** Event names delivered on those channels (subscribe to a channel, receive these). */

@@ -24,12 +24,27 @@ export interface KolTrade {
 export interface KolFeedResponse {
     trades: KolTrade[];
     count: number;
+    /** LEGACY strict timestamp cursor (skips same-timestamp siblings) — prefer next_cursor. */
+    next_before?: string | null;
+    /** Pass as `cursor` for the next (older) page; null at the end. */
+    next_cursor?: string | null;
+    /** false only when the feed is exhausted. */
+    has_more?: boolean;
+    /** Present when a filter was applied after the candidate fetch; scan_truncated=true means more matches MAY exist past next_cursor. */
+    scan?: {
+        post_filtered: boolean;
+        scanned: number;
+        scan_truncated: boolean;
+        scan_budget: number;
+    };
 }
 export type KolStrategy = "scalper" | "day_trader" | "swing_trader" | "hodler" | "mixed";
 export interface KolFeedParams {
     limit?: number;
-    /** Cursor — ISO 8601 timestamp; returns trades strictly older than this. Pass `next_before` from the previous response for polling. */
+    /** LEGACY cursor — ISO 8601 timestamp; returns trades strictly older than this (skips same-timestamp rows). Prefer `cursor`. */
     before?: string;
+    /** PREFERRED pagination: `next_cursor` from the previous page — opaque strict keyset (no skipped/repeated rows at shared timestamps). Cannot be combined with `before`. */
+    cursor?: string;
     action?: "buy" | "sell";
     kol?: string;
     /** PRO+: minimum SOL size per trade */
@@ -89,6 +104,14 @@ export interface KolCoordinationResponse {
     min_kols: number;
     /** v1.1 — score formula version. */
     score_version?: string;
+    /** 2026-09-21 — the clusters the ranking covered: top `max_size` by (kol_count DESC, net_sol_flow DESC); filters + score sort run inside it. */
+    universe?: {
+        kind: "top_by_kol_count";
+        order: string;
+        max_size: number;
+        size: number;
+        truncated_at_max: boolean;
+    };
     /** v1.1 — peak-density window used. */
     window_minutes?: number;
 }
@@ -171,8 +194,10 @@ export type ScoutTier = "S" | "A" | "B" | "C";
 export interface FirstTouchesParams {
     /** ISO datetime — return events strictly newer than this. Use as a polling cursor. */
     since?: string;
-    /** ISO datetime — return events strictly older than this. Use for pagination. */
+    /** ISO datetime — return events strictly older than this. LEGACY pagination; prefer `cursor`. */
     before?: string;
+    /** PREFERRED pagination: `next_cursor` from the previous page — opaque strict keyset (no skipped/repeated rows at shared timestamps). Cannot be combined with `before`. */
+    cursor?: string;
     limit?: number;
     /** Filter to one KOL wallet address (32–44 base58 chars). */
     kol?: string;
@@ -231,6 +256,17 @@ export interface FirstTouchesResponse {
     events: FirstTouchEvent[];
     count: number;
     next_before: string | null;
+    /** Pass as `cursor` for the next (older) page; null at the end. */
+    next_cursor?: string | null;
+    /** false only when the feed is exhausted. */
+    has_more?: boolean;
+    /** Present when a filter was applied after the candidate fetch; scan_truncated=true means more matches MAY exist past next_cursor. */
+    scan?: {
+        post_filtered: boolean;
+        scanned: number;
+        scan_truncated: boolean;
+        scan_budget: number;
+    };
     data_age_seconds: number | null;
 }
 export interface FirstTouchSubscriptionFilters {
@@ -293,10 +329,24 @@ export interface KolLeaderboardEntry {
     median_hold_minutes_30d?: number | null;
     /** v1.12 — percentile rank (0-100) of early entry quality over the last 30 days. */
     percentile_early_entry_30d?: number | null;
+    /** v1.24 — complete SQL aggregate over the period; null when that read failed (entry_mc_complete=false). */
+    entry_mc_samples?: number | null;
+    avg_entry_mc_usd?: number | null;
+}
+/** v1.24 — pagination walks a FIXED ranked universe, not every KOL. */
+export interface LeaderboardUniverse {
+    kind: string;
+    period?: string;
+    max_size: number;
+    size: number;
+    note?: string;
 }
 export interface KolLeaderboardResponse {
     leaderboard: KolLeaderboardEntry[];
     period: string;
+    universe?: LeaderboardUniverse;
+    entry_mc_window_start?: string | null;
+    entry_mc_complete?: boolean;
 }
 export type KolLeaderboardSort = "pnl" | "winrate" | "profit_factor" | "roi" | "early_entry";
 export interface KolLeaderboardParams {
@@ -348,12 +398,27 @@ export interface DeployerAlertsResponse {
     alerts: DeployerAlert[];
     limit: number;
     offset: number;
-    /** Cursor for the next page — pass as `before` to fetch older alerts. */
+    /** LEGACY strict timestamp cursor (skips alerts sharing the boundary created_at) — prefer next_cursor. */
     next_before?: string | null;
+    /** Pass as `cursor` for the next (older) page; null at the end. */
+    next_cursor?: string | null;
+    /** false only when the feed is exhausted. */
+    has_more?: boolean;
+    /** false only if kol_buys could not be aggregated exactly (counts are then lower bounds). */
+    kol_buys_complete?: boolean;
+    /** Present with min_kol_buys; scan_truncated=true means more matches MAY exist past next_cursor. */
+    scan?: {
+        post_filtered: boolean;
+        scanned: number;
+        scan_truncated: boolean;
+        scan_budget: number;
+    };
 }
 export interface DeployerAlertsParams {
     since?: string;
-    /** Cursor — ISO 8601 timestamp; returns alerts strictly older than this. Preferred over `offset` at scale. */
+    /** Opaque strict (created_at, id) cursor — `next_cursor` from the previous page. Preferred. Not combinable with before/offset. */
+    cursor?: string;
+    /** LEGACY cursor — ISO 8601 timestamp; returns alerts strictly older than this (skips same-timestamp siblings). */
     before?: string;
     limit?: number;
     offset?: number;
@@ -606,7 +671,19 @@ export interface KolEntryOrderEntry {
 export interface KolEntryOrderResponse {
     token_mint: string;
     entries: KolEntryOrderEntry[];
-    count: number;
+    /** @deprecated the route never returned `count` — use `returned` (entries.length) / `total_kol_buyers`. */
+    count?: number;
+    /** v1.24 — total_kol_buyers counts ALL first buyers (was capped by a 2,000-row read). */
+    total_kol_buyers?: number;
+    returned?: number;
+    has_more?: boolean;
+    complete?: boolean;
+}
+/** v1.24 — HTTP 503 when the entry-order aggregate is unavailable (e.g. during a schema rollout). Retry. */
+export interface KolEntryOrderUnavailableResponse {
+    error: string;
+    retryable: true;
+    retry_after_seconds: number;
 }
 export interface KolEntryOrderParams {
     /** Cap number of ranked entries (default 50) */
@@ -641,6 +718,15 @@ export interface KolCompareOverlapToken {
 export interface KolCompareResponse {
     profiles: KolCompareProfile[];
     overlap?: KolCompareOverlapToken[];
+    /** v1.24 — overlap is the top 25 of `total` qualifying tokens over the full 30 d window; null total = the aggregate failed. */
+    overlap_meta?: {
+        window_start: string;
+        min_wallets: number;
+        total: number | null;
+        returned: number;
+        has_more: boolean | null;
+        complete: boolean;
+    };
     count: number;
 }
 export interface KolCompareParams {
@@ -705,10 +791,15 @@ export interface AlphaLeaderboardEntry {
     buy_size_stddev?: number;
     active_hours?: number;
     bot_confidence?: "low" | "medium" | "high" | "none";
+    /** v1.24 — null (not 0) when the entry-MC aggregate failed. */
+    entry_mc_samples?: number | null;
+    avg_entry_mc_usd?: number | null;
 }
 export interface AlphaLeaderboardResponse {
     leaderboard: AlphaLeaderboardEntry[];
     total: number;
+    entry_mc_window_start?: string | null;
+    entry_mc_complete?: boolean;
     period: AlphaPeriod;
     sort: AlphaSort;
     min_tokens: number;
@@ -761,7 +852,10 @@ export interface AlphaLinkedResponse {
     wallet: string;
     linked: AlphaLinkedWallet[];
 }
-export type BuyerQualityConfidence = "low" | "medium" | "high";
+/** v1.24 (audit 2026-09-21) — "insufficient_data" when no buyer's win rate fed the
+ *  score (the neutral-50 placeholder or an all-excluded cohort). Treat unknown
+ *  future values as low confidence. */
+export type BuyerQualityConfidence = "insufficient_data" | "low" | "medium" | "high";
 export type BuyerQualitySignal = "positive" | "neutral" | "negative";
 export interface CapTableBuyer {
     rank: number;
@@ -797,7 +891,16 @@ export interface TradeCoverage {
     scope: string;
     in_scope?: boolean | null;
     note?: string;
+    /** v1.24 — same value as in_scope: persisted rows exist (presence, not completeness). */
+    data_observed?: boolean | null;
+    /** v1.24 — does the CURRENT capture gate admit this mint? */
+    eligibility?: TradeEligibility | null;
+    eligibility_basis?: string | null;
+    /** v1.24 — always "not_verified": rows existing never proves a complete interval. */
+    completeness?: "not_verified";
 }
+/** v1.24 — treat unknown future values as "unknown". */
+export type TradeEligibility = "eligible" | "lapsed" | "excluded" | "unknown" | "admitted_previously" | "not_applicable";
 export interface TokenCapTableResponse {
     mint: string;
     buyers: CapTableBuyer[];
@@ -832,13 +935,20 @@ export interface TokenBuyerQualityResponse {
          * dump_cluster_count 0 historically leans runner.
          */
         recycled_early_buyer_count: number;
+        /** v1.24 — buyers with ≥3 tokens of history (cohort identification, not predictive). */
+        wallets_with_history?: number;
+        /** v1.24 — buyers whose win rate fed the score; the basis of `confidence`. */
+        qualified_win_rate_wallets?: number;
     };
     note?: string;
     /** v1.23.4 — trade-coverage disclosure (absent on older cached responses). */
     coverage?: TradeCoverage;
 }
 export type TokenRiskBand = "safe" | "caution" | "danger";
-export type TokenRiskStatus = "ok" | "warn" | "danger";
+/** v1.24 (score v2) — unknown = the input should exist but could not be read / is insufficient;
+ *  not_assessed = no evidence source applies to this token. Both carry 0 points and are never
+ *  positive evidence. Treat any future value as not-ok. */
+export type TokenRiskStatus = "ok" | "warn" | "danger" | "unknown" | "not_assessed";
 export interface TokenRiskFactor {
     key: string;
     label: string;
@@ -869,7 +979,18 @@ export interface TokenRiskInputs {
     liquidity_to_mc_ratio: number | null;
     transfer_fee_bps: number | null;
     is_token_2022: boolean | null;
+    /** DEPRECATED alias of token_supply_burn_detected — a token-SUPPLY burn, never an LP burn (score v2). */
     burn_detected: boolean | null;
+    /** v1.24 — the mint's on-chain supply decreased. Not LP evidence. */
+    token_supply_burn_detected?: boolean | null;
+    /** v1.24 — verified LP custody; "unknown" for every Solana pool today. */
+    lp_burn_status?: LpBurnStatus;
+    /** v1.24 — creator history label; only "established" moves the score. */
+    deployer_history_status?: DeployerHistoryStatus | null;
+    deployer_reputation_scored?: boolean;
+    supply_inflation_pct?: number | null;
+    /** v1.24 — when the liquidity figure was last observed; a not-assessed creator needs it < 6 h for "safe" (a policy threshold, not proof of safety). */
+    liquidity_observed_at?: string | null;
     launch_cohort_sol: number | null;
     launch_cohort_size: number | null;
     deployer_bonding_rate: number | null;
@@ -907,8 +1028,30 @@ export interface TokenRiskDev {
     holdings_supply_pct: number | null;
     /** Is the dev wallet empty NOW (holdings < 1 token)? null when holdings unknown. */
     wallet_empty: boolean | null;
-    /** True when on-chain holdings sit well below the trade-derived expectation (tokens moved WITHOUT a sell). null = unknown (trade coverage or rollup freshness gate failed) — never a guess. */
+    /** DEPRECATED boolean view of transfer_status: true = "suspected" (never a verified transfer), false = "none_detected", null = "unknown". */
     transferred_out: boolean | null;
+    /** v1.24 — suspected | none_detected | unknown (batch: always unknown). */
+    transfer_status?: "suspected" | "none_detected" | "unknown";
+    transfer_reason?: string;
+    expected_tokens_from_trades?: number | null;
+    /** v1.24 — observation times: holdings (RPC) vs the dev-activity rollup. */
+    holdings_observed_at?: string | null;
+    activity_rollup_through?: string | null;
+    activity_rollup_ran_at?: string | null;
+}
+/** v1.24 — LP custody evidence. */
+export type LpBurnStatus = "verified" | "not_verified" | "unknown";
+/** v1.24 — creator history label (audit F08). "unranked" tier is NOT "new". */
+export type DeployerHistoryStatus = "new_in_our_index" | "limited_history" | "reputation_pending" | "established";
+/** v1.24 — what the score could not observe. status "incomplete" ⇒ the score is a lower bound and band is never "safe". */
+export interface TokenRiskAssessment {
+    status: "complete" | "incomplete";
+    unknown_inputs: string[];
+    not_assessed: string[];
+    /** Reason per listed input, keyed by input name, plus `band_cap` when the band was capped at caution. */
+    explanations?: Record<string, string> & {
+        band_cap?: string;
+    };
 }
 /** Transparent 0–100 token rug-risk/safety score (higher = riskier). PRO/ULTRA only. */
 export interface TokenRiskResponse {
@@ -922,14 +1065,31 @@ export interface TokenRiskResponse {
     dev?: TokenRiskDev | null;
     /** v1.23.4 — trade-coverage disclosure (keyed single-mint route only). Its `note` names the split: trade-derived sub-fields are launchpad-pipeline scoped, on-chain sub-fields are unaffected. */
     coverage?: TradeCoverage;
+    /** v1.24 (score_version "v2") — unknown vs not-assessed inputs. */
+    assessment?: TokenRiskAssessment;
+    /** v1.24 — ok | not_found (no pending_deploys row) | unavailable (lookup failed). */
+    dev_status?: "ok" | "not_found" | "unavailable";
     as_of: string;
+}
+/** v1.24 — HTTP 503 body when a score-critical input could not be read (retry; never a partial score).
+ *  A 503 can also carry the generic statement-timeout body { error, error_kind: "statement_timeout", retry_after_seconds }. */
+export interface TokenRiskUnavailableResponse {
+    error: string;
+    code: "risk_inputs_unavailable";
+    unavailable_inputs: string[];
+    retryable: true;
+    retry_after_seconds: number;
 }
 /** Per-mint error object for untracked / failed mints in a batch risk response.
  *  Untracked mints come back as `not_tracked` and do NOT fail the batch; a
  *  per-mint compute failure comes back as `error`. */
 export interface TokenBatchRiskError {
     mint: string;
-    error: "not_tracked" | "error";
+    /** v1.24 — "unavailable" = a score-critical input could not be read (retryable). */
+    error: "not_tracked" | "error" | "unavailable";
+    code?: "risk_inputs_unavailable";
+    unavailable_inputs?: string[];
+    retryable?: boolean;
 }
 /** One entry in the `tokens` array of POST /tokens/batch/risk — either a full
  *  risk result (same shape as GET /tokens/{mint}/risk) or a per-mint error. */
@@ -1335,7 +1495,14 @@ export interface ScoutLeaderboardParams {
 export interface KolConsensusResponse {
     total_kol_buyers: number;
     total_kol_sellers: number;
+    /** Share of KOL buyers with ≥1 recorded sell (any size) — NOT a full position exit. */
     kol_exit_rate: number | null;
+    /** v1.24 — accurately named copy of kol_exit_rate. */
+    kol_any_sell_rate?: number | null;
+    /** v1.24 — false when the trade read hit its row ceiling (numbers cover the oldest rows_scanned trades). */
+    complete?: boolean;
+    truncated?: boolean;
+    rows_scanned?: number;
     net_flow_sol: number;
     total_buy_sol: number;
     total_sell_sol: number;
@@ -1389,11 +1556,85 @@ export interface TokenSnapshot {
     primary_pool_address: string | null;
     is_token_2022: boolean | null;
     transfer_fee_bps: number | null;
-    top_buyers: TokenSnapshotTopBuyer[];
+    /** @deprecated never returned at this level — the route nests it as kol_activity.top_buyers. Kept optional for source compatibility. */
+    top_buyers?: TokenSnapshotTopBuyer[];
+    /** v1.24 — DEPRECATED meaning: a token-SUPPLY burn (mint supply decreased), never LP evidence. null = unknown (no mc-tracker observation). */
+    burn_detected?: boolean | null;
+    /** v1.24 — creator + reputation; resolved for unbonded launches too. null ⇒ read deployer_identity. */
+    deployer?: TokenSnapshotDeployer | null;
+    /** v1.24 — complete 7-day aggregate; status "unavailable" ⇒ every figure is null (never 0 / "neutral"). */
+    kol_activity?: TokenSnapshotKolActivity;
+    /** null = the cohort read failed; 0 = no cohort rows. */
+    launch_cohort_size?: number | null;
+    /** Last trade seen by ANY source — not a price-age anchor (use price_observed_at). */
+    last_trade_at?: string | null;
+    /** v1.24 — mc_tracker | dex_stream; null when there is no price. */
+    price_source?: "mc_tracker" | "dex_stream" | null;
+    /** v1.24 — observation time of the SELECTED price source (price age anchor). */
+    price_observed_at?: string | null;
+    /** null = a price exists but its age is unknown (never a false "fresh"). */
+    price_is_stale?: boolean | null;
+    price_age_seconds?: number | null;
+    /** v1.24 — why `deployer` is null: unknown creator vs failed lookup. */
+    deployer_identity?: {
+        identity_status: "resolved" | "unknown" | "lookup_failed";
+        history_status: DeployerHistoryStatus | null;
+        address: string | null;
+        source: "deployer_tokens" | "pending_deploys" | null;
+    };
+    /** v1.24 — per-block read status; "unavailable" blocks are null, never defaults. */
+    data_status?: Record<string, "ok" | "unavailable">;
+    token_supply_burn_detected?: boolean | null;
+    lp_burn_status?: LpBurnStatus;
+    /** null = the blacklist lookup failed (unknown). */
+    is_blacklisted?: boolean | null;
+}
+/** v1.24 — GET /token/{mint} creator block (audit F08). */
+export interface TokenSnapshotDeployer {
+    wallet: string;
+    address: string;
+    tier: string;
+    bonding_rate: number;
+    total_deployed: number;
+    total_bonded: number;
+    recent_bond_rate: number;
+    identity_status: "resolved";
+    identity_source: "deployer_tokens" | "pending_deploys";
+    /** Only "established" means bonding_rate is a real track record. */
+    history_status: DeployerHistoryStatus;
+    first_seen_at: string | null;
+    observed_launch_count: number;
+    resolved_outcome_count: number;
+    stats_computed_at: string | null;
+}
+/** v1.24 — GET /token/{mint} KOL activity (audit F05): a complete window aggregate, never a newest-N sample. */
+export interface TokenSnapshotKolActivity {
+    status: "ok" | "unavailable";
+    buying_kols: number | null;
+    selling_kols: number | null;
+    net_flow_sol: number | null;
+    signal: "accumulating" | "distributing" | "neutral" | null;
+    /** Wallet addresses are ULTRA-only. */
+    top_buyers: Array<TokenSnapshotTopBuyer & {
+        wallet?: string;
+    }>;
+    window_hours: number;
+    window_start: string | null;
+    computed_at: string | null;
+    last_trade_at: string | null;
+    unique_kols: number | null;
+    unique_wallets: number | null;
+    buys: number | null;
+    sells: number | null;
+    buy_sol: number | null;
+    sell_sol: number | null;
+    counts_basis: "complete_window" | null;
 }
 /** Response of GET /token/{mint} — live token snapshot. */
 export interface TokenSnapshotResponse {
     token: TokenSnapshot;
+    /** v1.24 — response assembly time; NOT the observation time of any field. */
+    as_of?: string;
 }
 /** Valid signal names accepted by GET /signals/{name}/performance. */
 export type SignalName = "dump_cluster_count" | "runner_rate" | "recycled_early_buyer_count" | "coordination_count";
@@ -1446,8 +1687,8 @@ export interface TokenResponseBody {
     liquidity_to_mc_ratio?: number | null;
     /** v1.12 — SOL raised in the token's launch cohort (first-N buyers). */
     launch_cohort_sol?: number | null;
-    /** v1.12 — number of wallets in the launch cohort (0–20). */
-    launch_cohort_size?: number;
+    /** v1.12 — number of wallets in the launch cohort (0–20); v1.24: null when the cohort read failed. */
+    launch_cohort_size?: number | null;
     [key: string]: unknown;
 }
 export type ApiTier = "BASIC" | "PRO" | "ULTRA";
@@ -1532,6 +1773,16 @@ export interface TokensListParams {
     max_liq_mc_ratio?: number;
     /** v1.12 — filter by deployer tier. */
     deployer_tier?: "elite" | "good" | "moderate" | "rising" | "cold" | "unranked";
+    /**
+     * @deprecated use `lp_burn_status` per token, or `supply_burn` for the token-supply burn flag.
+     * v1.24 — VERIFIED LP evidence only: true = lp_burnt_pct ≥ 99, false = measured AND below 99.
+     * Unknown LP custody (every token today) matches NEITHER value, so both match nothing until an
+     * LP-evidence writer exists. Sending it adds a `deprecations` entry to the response.
+     */
+    lp_burned?: boolean;
+    /** v1.24 — the token-SUPPLY burn flag (what lp_burned used to filter on). */
+    supply_burn?: boolean;
+    launchpad?: "pumpfun" | "launchlab" | "bags";
     sort?: TokenListSort;
     limit?: number;
     offset?: number;
@@ -1557,6 +1808,11 @@ export interface TokenSummary {
     liquidity_to_mc_ratio?: number | null;
     /** v1.12 — deployer tier for this token's deployer; null when deployer is untracked. */
     deployer_tier?: string | null;
+    launchpad?: string | null;
+    /** v1.24 — VERIFIED LP evidence only; null = unknown (every token today). Was a supply-burn proxy before. */
+    lp_burned?: boolean | null;
+    lp_burn_status?: LpBurnStatus;
+    token_supply_burn_detected?: boolean | null;
 }
 export interface TokensListResponse {
     tokens: TokenSummary[];
@@ -1566,8 +1822,27 @@ export interface TokensListResponse {
         returned: number;
         has_more: boolean;
         post_filtered: boolean;
+        /** v1.24 — resume offset (a RAW candidate offset on post-filtered scans); null = end. */
+        next_offset?: number | null;
+        /** v1.24 — offsets walk a live ranking, not a snapshot: dedupe on mint. */
+        order_is_live?: boolean;
+        scanned?: number;
+        scanned_until_offset?: number;
+        /** v1.24 — the scan budget ran out: more matches MAY exist past next_offset. */
+        scan_truncated?: boolean;
+        scan_budget?: number;
     };
     filters: Record<string, unknown>;
+    /** v1.24 — present only when a deprecated parameter (today: lp_burned) was sent. */
+    deprecations?: TokensDeprecation[];
+}
+/** v1.24 — disclosure for a deprecated /tokens parameter. */
+export interface TokensDeprecation {
+    param: string;
+    status: "deprecated";
+    /** Exactly what the parameter matches today. */
+    matches: string;
+    replacement: string;
 }
 export type AlmostBondedSort = "velocity_desc" | "progress_desc" | "eta_asc";
 export interface AlmostBondedParams {
@@ -1581,6 +1856,8 @@ export interface AlmostBondedParams {
     max_age_minutes?: number;
     /** Filter by deployer reputation tier. */
     deployer_tier?: "elite" | "good" | "moderate" | "rising" | "cold" | "unranked";
+    /** Restrict to one launchpad venue (default: both). */
+    launchpad?: "pumpfun" | "launchlab";
     /** Only tokens whose mint+freeze authorities are revoked. */
     authority_revoked?: boolean;
     /** Minimum liquidity_usd. */
@@ -1613,6 +1890,14 @@ export interface AlmostBondedResponse {
     tokens: AlmostBondedToken[];
     filters: Record<string, unknown>;
     returned: number;
+    /** v1.24 — what the ranking covered; scan_truncated ⇒ velocity/eta ranks cover only `scanned` candidates. */
+    scan?: {
+        scanned: number;
+        matched: number | null;
+        complete: boolean;
+        scan_truncated: boolean;
+        scan_budget: number;
+    };
     note: string;
 }
 export interface WalletStats {
@@ -1795,10 +2080,19 @@ export interface WalletPnlResponse {
     notes: {
         cost_basis_observable_from: string;
         truncated_trades?: number;
+        trades_through?: string;
+        trades_through_block_time?: number;
+        trades_through_same_second?: number;
     };
     cache_hit?: boolean;
     computed_at?: string;
     ttl_seconds?: number;
+    /** v1.24 — seconds since computed_at (source age survives a cache hit). */
+    cache_age_seconds?: number;
+    /** v1.24 — hits: head_checked (no newer trade) | unverified (check failed). */
+    cache_validation?: "head_checked" | "unverified";
+    /** v1.24 — a cache row existed but the wallet traded since; this response was recomputed. */
+    cache_invalidated?: "new_activity";
 }
 export interface WalletPositionsResponse {
     address: string;
@@ -1806,6 +2100,9 @@ export interface WalletPositionsResponse {
     cache_hit?: boolean;
     computed_at?: string | null;
     ttl_seconds?: number | null;
+    cache_age_seconds?: number;
+    cache_validation?: "head_checked" | "unverified";
+    cache_invalidated?: "new_activity";
 }
 export interface WalletHoldingsParams {
     /** 1–500, default 200. */
@@ -2407,8 +2704,10 @@ export interface TokenLocksResponse {
 export interface TokenLocksFeedParams {
     /** ISO date-time — only contracts created after this instant (use `pagination.next_since`). */
     since?: string;
-    /** ISO date-time — page back: only contracts created before this instant (`pagination.next_before`). */
+    /** ISO date-time — page back: only contracts created before this instant (`pagination.next_before`). Legacy + strict: skips same-timestamp siblings — prefer `cursor`. */
     before?: string;
+    /** v1.24 — opaque `pagination.next_cursor` from the previous page: strict (created_at, id) keyset, no repeats, no skips. Not combinable with `before`. */
+    cursor?: string;
     mint?: string;
     sender?: string;
     recipient?: string;
@@ -2433,6 +2732,13 @@ export interface TokenFeedPagination {
     next_since: string | null;
     /** Pass as `before` to page back. */
     next_before: string | null;
+    /** v1.24 (locks feed) — pass as `cursor` to page back without skipping same-timestamp rows; null = end. */
+    next_cursor?: string | null;
+    /** v1.24 — present when a post-filter (min_usd / min_pct_of_supply / status) was scanned. */
+    post_filtered?: boolean;
+    scanned?: number;
+    scan_truncated?: boolean;
+    scan_budget?: number;
 }
 /** WebSocket pointer returned by the feed endpoints — the same rows are pushed live on `channel`. */
 export interface TokenFeedStreamPointer {
@@ -2449,6 +2755,8 @@ export interface TokenFeedStreamPointer {
 export interface TokenLocksFeedResponse {
     locks: TokenLockFeedEntry[];
     pagination: TokenFeedPagination;
+    /** v1.24 — "mint_facts:<table>" when a per-mint enrichment read failed; those rows' usd/ui/pct are null (unknown) and min_usd / min_pct_of_supply could not be applied to them. */
+    degraded_fields?: string[];
     /** Pointer to the `token:locks` WS channel (event `token:lock`). */
     stream: TokenFeedStreamPointer;
     meta?: Record<string, unknown>;
@@ -3110,6 +3418,12 @@ export interface DeployerStatsResponse {
     bonds_detected: number;
     bond_rate: number;
     tiers: DeployerTierCounts;
+    /** Per-tier average MC at alert over 30 d. v1.24: complete SQL aggregate; all null when mc_at_alert_complete=false. */
+    avg_mc_at_alert_usd_30d?: Record<string, number | null>;
+    /** v1.24: values are null (not 0) when the aggregate read failed. */
+    mc_at_alert_samples_30d?: Record<string, number | null>;
+    mc_at_alert_window_start?: string;
+    mc_at_alert_complete?: boolean;
 }
 export interface DeployerLeaderboardParams {
     /** Restrict to one grade. */
