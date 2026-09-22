@@ -2,7 +2,7 @@ import { SolanaPaymentBudget, createSolanaPaidFetch } from "./solana-payment.js"
 export { SolanaPaymentBudget } from "./solana-payment.js";
 import { MadeOnSolStream } from "./stream.js";
 import { VERSION } from "./version.js";
-export { MadeOnSolStream } from "./stream.js";
+export { MadeOnSolStream, STREAM_CHANNELS } from "./stream.js";
 const DEFAULT_BASE_URL = "https://madeonsol.com";
 function resolveAuthHeaders(mode, key) {
     const h = { "User-Agent": `madeonsol-x402/${VERSION}` };
