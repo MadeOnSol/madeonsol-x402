@@ -155,6 +155,8 @@ export type {
   StreamReplayResult,
   StreamGap,
   StreamFatal,
+  StreamSubscription,
+  StreamSubscribeOptions,
 } from "./stream.js";
 
 export type {

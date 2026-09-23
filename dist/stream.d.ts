@@ -29,7 +29,7 @@ export declare const STREAM_CHANNELS: readonly StreamChannel[];
 /** Event names delivered on those channels (subscribe to a channel, receive these). */
 export type StreamEventName = "kol:trade" | "kol:coordination" | "kol:first_touch" | "deployer:alert" | "deployer:bond" | "wallet_tracker:event" | "copytrade:signal" | "price_alert:dip" | "price_alert:recovery" | "sniper:deploy" | "token:graduation" | "token:price" | "token:lock" | "token:fee_claim" | "token:surge" | "token:revival";
 /** Lifecycle events you can also listen for. */
-export type StreamLifecycleEvent = "open" | "close" | "reconnect" | "subscribed" | "heartbeat" | "warning" | "cursor" | "replay" | "gap" | "fatal" | "error";
+export type StreamLifecycleEvent = "open" | "close" | "reconnect" | "subscribed" | "updated" | "unsubscribed" | "heartbeat" | "warning" | "cursor" | "replay" | "gap" | "fatal" | "error";
 /**
  * A server `type: "warning"` frame, surfaced as the `"warning"` lifecycle
  * event. Known codes: `channels_rejected` (a subscribe named a channel that
@@ -39,8 +39,16 @@ export type StreamLifecycleEvent = "open" | "close" | "reconnect" | "subscribed"
  * channel is silent, so never ignore these.
  */
 export interface StreamWarning {
-    /** Machine-readable code, e.g. `"channels_rejected"` or `"channels_revoked"`. */
+    /**
+     * Machine-readable code: `channels_rejected`, `channels_revoked`,
+     * `replay_in_progress`, and for named subscriptions `invalid_sub_id`,
+     * `too_many_subscriptions`, `unknown_sub_id`, `invalid_filters`; the client
+     * itself emits `named_subscriptions_unsupported` once when the server
+     * ignores `sub_id` (older deployment).
+     */
     code?: string;
+    /** The named subscription the warning is about (absent for the default one). */
+    sub_id?: string;
     /** Channels the server refused, each with a human-readable reason. */
     rejected?: Array<{
         channel: string;
@@ -85,11 +93,36 @@ export interface StreamCursor {
     seq: number;
     ts: number;
 }
+/**
+ * A named subscription (Phase 2): one socket can hold several, each with its
+ * own channels and filters. `subId` is client-chosen, 1-64 characters of
+ * `A-Z a-z 0-9 _ . -`. The plain `subscribe(channels, filters)` call is the
+ * connection's implicit `"default"` subscription; its frames carry no
+ * `sub_id`. An event that matches several subscriptions is delivered once
+ * per matching subscription, each frame stamped with its `sub_id`, and the
+ * client dedupes by (sub_id, id) — so the same event CAN reach two handlers
+ * legitimately. Tier caps (total per connection, the default one included):
+ * PRO 5, ULTRA 10, BUSINESS 20.
+ */
+export interface StreamSubscription {
+    subId: string;
+    channels: StreamChannel[];
+    filters: Record<string, unknown>;
+}
+/** Argument of `subscribe({ subId, channels, filters })`. */
+export interface StreamSubscribeOptions {
+    subId: string;
+    channels: StreamChannel[];
+    /** Filters scoped to THIS subscription only. Omitted = keep the ones it has. */
+    filters?: Record<string, unknown>;
+}
 export interface StreamEvent<T = unknown> {
     channel: StreamChannel;
     event: StreamEventName;
     data: T;
     ts: number;
+    /** The named subscription this frame was delivered under; absent for the default subscription. */
+    sub_id?: string;
     /** Stable event id — the same event carries the same id live and in replay. Dedupe on it. */
     id?: string;
     /**
@@ -136,8 +169,21 @@ export interface StreamReplayResult {
     resumeReason: string | null;
     /** Raw `replay_start` frame (null if none arrived). */
     start: Record<string, unknown> | null;
-    /** Raw `replay_end` frame (null on a client-side timeout). */
+    /**
+     * Raw `replay_end` frame (null on a client-side timeout). With several
+     * named subscriptions this is the LAST one received; `ends` has them all.
+     */
     end: Record<string, unknown> | null;
+    /**
+     * The subscriptions this recovery covered (`"default"` for the plain one).
+     * A client holding N named subscriptions resumes each of them: every
+     * subscribe of the reconnect carries the same cursor, the server serves the
+     * replays one after another and the cursor commits once ALL have ended,
+     * at the smallest `last_seq` / `last_ts` across them.
+     */
+    subscriptions: string[];
+    /** Raw `replay_end` frame per subscription. */
+    ends: Record<string, Record<string, unknown>>;
 }
 /**
  * Part of a resume could not be recovered. It says what is KNOWN: which
@@ -167,7 +213,11 @@ export interface StreamGap {
      * range is requested again on the next reconnect.
      */
     permanent: boolean;
-    /** Per-channel entries the server reported as incomplete / not reconstructable. */
+    /**
+     * Per-channel entries the server reported as incomplete / not
+     * reconstructable, keyed by channel for the default subscription and by
+     * `"<sub_id>/<channel>"` for a named one.
+     */
     channels: Record<string, unknown>;
     /** The cursor the resume started from (the committed cursor stays there). */
     from: StreamCursor | null;
@@ -275,6 +325,12 @@ export declare class MadeOnSolStream {
     private ws;
     private listeners;
     private desired;
+    /** Named subscriptions (Phase 2), in creation order; the default one is `desired`. */
+    private named;
+    /** sub_ids of the subscribes sent on this connection whose `subscribed` ack is still due (acks arrive in order). */
+    private ackExpect;
+    private namedUnsupportedWarned;
+    private listWaiters;
     private closedByUser;
     private stopped;
     private attempt;
@@ -328,10 +384,45 @@ export declare class MadeOnSolStream {
     private emit;
     /** Call every handler for a data frame; collect what they returned (for completion tracking). */
     private callHandlers;
-    /** Subscribe to one or more channels (connects on first call). Optional server-side filters. */
+    /**
+     * Subscribe to one or more channels (connects on first call). Optional
+     * server-side filters. `subscribe(channels, filters)` is the connection's
+     * default subscription; `subscribe({ subId, channels, filters })` opens (or
+     * extends) a NAMED subscription with its own channels and filters, whose
+     * frames carry `evt.sub_id` (see StreamSubscription).
+     */
     subscribe(channels: StreamChannel[], filters?: Record<string, unknown>): this;
-    /** Stop receiving the given channels. */
+    subscribe(opts: StreamSubscribeOptions): this;
+    /**
+     * Replace the filters of a subscription (`"default"` for the plain one).
+     * The server acks with an `updated` frame; a refused update (for example a
+     * `token:prices` subscription without valid `mints`) arrives as a `warning`
+     * with code `invalid_filters` and the previous filters stay.
+     */
+    updateSubscription(subId: string, filters: Record<string, unknown>): this;
+    /**
+     * `unsubscribe(channels)` stops those channels on the default subscription;
+     * `unsubscribe(subId)` removes a whole named subscription.
+     */
     unsubscribe(channels: StreamChannel[]): this;
+    unsubscribe(subId: string): this;
+    /** Every subscription this client asks for (local view, no round trip). */
+    getSubscriptions(): StreamSubscription[];
+    /**
+     * Ask the server what this connection holds (`list` → `subscriptions`).
+     * Resolves with the local view when not connected or when the server does
+     * not answer within `timeoutMs`.
+     */
+    listSubscriptions(timeoutMs?: number): Promise<StreamSubscription[]>;
+    /**
+     * A pre-Phase-2 server (ignores sub_id) answers every resume with ONE
+     * replay for the whole connection, reported without sub_id: only "default"
+     * can still be awaited. Finishes the recovery at once when that one has
+     * already ended.
+     */
+    private collapsePending;
+    /** A subscription removed while its replay was still awaited: stop waiting for it. */
+    private forgetPending;
     /** Open the connection (also called implicitly by subscribe). Restarts a stream that went `"fatal"`. */
     connect(): Promise<void>;
     /** Close the connection and stop reconnecting. */
@@ -340,8 +431,22 @@ export declare class MadeOnSolStream {
     /** `onUnrecoverableGap: "stop"`: stop the stream and hand the decision to the caller. */
     private haltForGap;
     private fatal;
+    /** The subscribe frames for the given subscriptions (default first, then named in creation order). */
+    private subscribeFrames;
+    /**
+     * Send the subscribe(s). On a connection's FIRST subscribe (or an explicit
+     * retry after a retryable gap) every subscription is sent with the SAME
+     * resume cursor: the server serves one replay per subscription, one after
+     * another, and holds live frames until the last replay_end. A later
+     * subscribe adds channels live (no resume).
+     */
     private sendSubscribe;
-    /** The server did not answer `resume` (older deployment): retry with the legacy fields. */
+    /**
+     * The server did not answer `resume` (older deployment): retry with the
+     * legacy fields. Such a server has no named subscriptions either, so the
+     * one legacy replay covers the union of channels and resolves every pending
+     * subscription at once.
+     */
     private fallbackToLegacy;
     private dropRecovery;
     /**
@@ -350,6 +455,16 @@ export declare class MadeOnSolStream {
      * reconnect resumes anyway.
      */
     private scheduleResumeRetry;
+    /**
+     * One `replay_end` per subscription → one aggregate the single-replay logic
+     * can run on unchanged: complete only when every subscription is; the
+     * commit position is the SMALLEST last_seq / last_ts across them (a later
+     * subscription's replay covered more, but the earlier one's live frames
+     * from that point on are still only in the live flush); channel entries
+     * keyed `"<sub_id>/<channel>"` for named subscriptions; `retryable` when
+     * any subscription says so.
+     */
+    private aggregateEnds;
     private finishRecovery;
     private handleMessage;
     /** Dedupe by id, hand the frame to the handlers, track completion for the cursor. */
