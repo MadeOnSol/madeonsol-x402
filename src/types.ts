@@ -3062,7 +3062,9 @@ export interface TokenUnlocksResponse {
  * lock-tracker the moment a NEW contract's account is first seen (~seconds after
  * the create tx). A compact writer payload, NOT the full live-derived REST row:
  * poll GET /tokens/{mint}/locks for the live state. Updates (claims / cancels /
- * closes) are NOT pushed.
+ * closes) are NOT pushed on a plain subscription — since 2026-09-23 they are
+ * opt-in lifecycle events on the same channel (`filters.lifecycle: true`, see
+ * {@link TokenLockLifecycleFilters} / {@link TokenLockLifecycleEvent}).
  */
 export interface TokenLockStreamEvent {
   lock_account: string;
@@ -3083,6 +3085,135 @@ export interface TokenLockStreamEvent {
   slot:         number | null;
   created_at:   string;
 }
+
+/* ── Lock lifecycle on `token:locks` (WS Phase 3, 2026-09-23 — opt-in) ── */
+
+/** Lifecycle event names delivered on `token:locks` to a subscription with `filters.lifecycle: true`. */
+export type TokenLockLifecycleEventName =
+  | "token:lock_claimed"
+  | "token:lock_cancelled"
+  | "token:lock_closed"
+  | "token:lock_updated"
+  | "token:unlock_upcoming"
+  | "token:unlock_available";
+
+/** Kind of unlock instant a schedule event describes. */
+export type TokenUnlockKind = "cliff" | "period" | "final" | "tranche";
+
+/**
+ * Subscribe filters that switch `token:locks` to lifecycle mode. Without
+ * `lifecycle: true` the channel carries only today's `token:lock` create event,
+ * byte-identical. Every key is per (named) subscription and AND-combined; a
+ * malformed value refuses the channel (`channels_rejected`) or the update
+ * (`invalid_filters`), never widens it.
+ */
+export interface TokenLockLifecycleFilters {
+  lifecycle: true;
+  /** Subset of the lifecycle event names to receive. Create events (`token:lock`) always pass. */
+  events?: TokenLockLifecycleEventName[];
+  /** Narrows schedule events (`token:unlock_*`) only. */
+  unlock_kinds?: TokenUnlockKind[];
+  /**
+   * Default false. Streamflow automatic-withdrawal streams are cranked by the
+   * program's keeper many times a day (real transfers, ~90 % of all claims);
+   * those `token:lock_claimed` events are hidden unless this is true.
+   */
+  include_automatic_claims?: boolean;
+  /** Token scope for creates AND lifecycle events (≤ 500). Applied only with `lifecycle: true`. */
+  mints?: string[];
+}
+
+/** Fields every Solana lifecycle event carries. `id` on the frame = `<event>:<event_key>`. */
+export interface TokenLockLifecycleBase {
+  /** Durable dedupe key: `<lock_account>:<type>:<slot>[:<change>]` (diffs) or `<lock_account>:<type>:<unlock epoch s>` (schedule). */
+  event_key:    string;
+  lock_account: string;
+  mint:         string;
+  program:      TokenLockProgram;
+  /** Slot of the account update (null on schedule events). */
+  slot:         number | null;
+  /** When the tracker observed it (ISO). */
+  observed_at:  string | null;
+  /** The token's decimals; null when unknown. */
+  decimals?:    number | null;
+}
+
+/** `token:lock_claimed` — withdrawn increased since OUR last observed state. */
+export interface TokenLockClaimedEvent extends TokenLockLifecycleBase {
+  /** Δ withdrawn since the last observed state (a claim during a stream gap folds into the next one). Raw string. */
+  claimed_raw:          string;
+  withdrawn_raw:        string;
+  /** amount − withdrawn. */
+  remaining_raw:        string;
+  partial:              boolean;
+  /** Streamflow keeper-cranked withdrawal (hidden unless `include_automatic_claims`). */
+  automatic_withdrawal: boolean | null;
+  before:               { withdrawn_raw: string };
+  after:                { withdrawn_raw: string };
+  tx_signature:         string | null;
+}
+
+/** `token:lock_cancelled`. */
+export interface TokenLockCancelledEvent extends TokenLockLifecycleBase {
+  cancelled_at:  string;
+  withdrawn_raw: string | null;
+  amount_raw:    string | null;
+  before:        { cancelled_at: null; status: TokenLockStatus | null };
+  after:         { cancelled_at: string; status: TokenLockStatus | null };
+  tx_signature:  string | null;
+}
+
+/** `token:lock_closed` — Streamflow `closed` flag, or the account closed on chain. */
+export interface TokenLockClosedEvent extends TokenLockLifecycleBase {
+  reason:         "closed_flag" | "account_closed";
+  withdrawn_raw?: string | null;
+  amount_raw?:    string | null;
+  before:         { status: TokenLockStatus | null };
+  after:          { status: "closed" };
+  tx_signature:   string | null;
+}
+
+/** `token:lock_updated` — one event per change, never merged; `before` / `after` hold only the changed fields. */
+export interface TokenLockUpdatedEvent extends TokenLockLifecycleBase {
+  change:       "topup" | "extended" | "schedule_changed" | "recipient_changed";
+  /** `topup` only: amount added (raw string). */
+  added_raw?:   string;
+  /** `schedule_changed` only: cliff_at / period_seconds / amount_per_period_raw / cliff_amount_raw / end_at. */
+  fields?:      string[];
+  before:       Record<string, string | number | null>;
+  after:        Record<string, string | number | null>;
+  tx_signature: string | null;
+}
+
+/**
+ * `token:unlock_upcoming` (the lock's next unlock is within 24 h) /
+ * `token:unlock_available` (the unlock instant passed within the last 30 min).
+ * `available` means claimable PER THE SCHEDULE, NOT claimed.
+ */
+export interface TokenUnlockScheduleEvent extends TokenLockLifecycleBase {
+  unlock_at:          string;
+  unlock_kind:        TokenUnlockKind;
+  /** Discrete jump unlocking at that instant (GET /tokens/unlocks model); null + `amount_reason` when unknown. */
+  amount_raw:         string | null;
+  amount_reason:      string | null;
+  unlocked_total_raw: string | null;
+  release_model:      "periodic" | "continuous" | "tranched";
+  /** Only on `token:unlock_available`. */
+  claimable?:         true;
+  kind:               TokenLockKind | null;
+  sender:             string | null;
+  recipient:          string | null;
+  locked_amount_raw:  string | null;
+  withdrawn_raw:      string | null;
+}
+
+/** Any lifecycle payload on `token:locks` — narrow on the frame's `event`. */
+export type TokenLockLifecycleEvent =
+  | TokenLockClaimedEvent
+  | TokenLockCancelledEvent
+  | TokenLockClosedEvent
+  | TokenLockUpdatedEvent
+  | TokenUnlockScheduleEvent;
 
 /* ── pump.fun creator-fee sharing & fee claims — GET /tokens/{mint}/fee-shares, /tokens/fee-claims ── */
 

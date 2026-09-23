@@ -27,7 +27,7 @@ export type StreamChannel = "kol:trades" | "kol:coordination" | "kol:first_touch
 /** Every Solana channel, in the server's order. */
 export declare const STREAM_CHANNELS: readonly StreamChannel[];
 /** Event names delivered on those channels (subscribe to a channel, receive these). */
-export type StreamEventName = "kol:trade" | "kol:coordination" | "kol:first_touch" | "deployer:alert" | "deployer:bond" | "wallet_tracker:event" | "copytrade:signal" | "price_alert:dip" | "price_alert:recovery" | "sniper:deploy" | "token:graduation" | "token:price" | "token:lock" | "token:fee_claim" | "token:surge" | "token:revival";
+export type StreamEventName = "kol:trade" | "kol:coordination" | "kol:first_touch" | "deployer:alert" | "deployer:bond" | "wallet_tracker:event" | "copytrade:signal" | "price_alert:dip" | "price_alert:recovery" | "sniper:deploy" | "token:graduation" | "token:price" | "token:lock" | "token:lock_claimed" | "token:lock_cancelled" | "token:lock_closed" | "token:lock_updated" | "token:unlock_upcoming" | "token:unlock_available" | "token:fee_claim" | "token:surge" | "token:revival";
 /** Lifecycle events you can also listen for. */
 export type StreamLifecycleEvent = "open" | "close" | "reconnect" | "subscribed" | "updated" | "unsubscribed" | "heartbeat" | "warning" | "cursor" | "replay" | "gap" | "fatal" | "error";
 /**

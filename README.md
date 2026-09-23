@@ -441,7 +441,7 @@ stream.subscribe(["kol:trades", "deployer:alerts"]);
 // stream.unsubscribe([...]) / stream.close() when done
 ```
 
-Channels: `kol:trades`, `kol:coordination`, `kol:first_touches`, `deployer:alerts`, `wallet_tracker:events`, `copytrade:signals`, `price_alert:events`, `sniper:deploys`, `token:graduations`, `token:prices` (**new** in the channel list — event `token:price`, per-mint price/MC ticks; PRO+, REQUIRES `filters.mints` — PRO 25 / ULTRA 100 / BUSINESS 250 per connection; a state stream, so ticks carry no id/seq and are never replayed) (every pump.fun graduation in real time, tracked deployer or not — typed `GraduationEvent`), `token:locks` (**new 1.27** — event `token:lock` for every NEW Streamflow / Jupiter Lock / Bonfida lock or vesting contract, typed `TokenLockStreamEvent`; PRO+; updates are not pushed — poll `rest.tokenLocks()`), `token:fee_claims` (**new 1.27** — event `token:fee_claim` for every pump.fun fee event: distributions, social-handle claims, config changes, typed `TokenFeeClaimStreamEvent`; PRO+), `token:surges` (**new 1.28** — events `token:surge` (a token < 30 min old running ≥3× / ≥6× / ≥8× its launch MC — `tier` early / strong / breakout, each once per mint, sustained) and `token:revival` (≥24 h with no trade candle, then confirmed buys on the tape; `tier` null), typed `TokenSurgeStreamEvent` — the same row as `rest.tokensSurges()` minus `outcome`, `risk_flags[]` included; subscribe filters `kinds[]`, `tiers[]`, `launchpads[]`, `exclude_flags[]`, `min_mc_usd` / `max_mc_usd`, `deployer_tier[]`; PRO+). Lifecycle events: `open`, `close`, `reconnect`, `subscribed`, `heartbeat`, `warning`, `cursor`, `replay`, `gap`, `fatal`, `error`. Uses the global `WebSocket` on Node 22+; on Node < 22 also `npm i ws`.
+Channels: `kol:trades`, `kol:coordination`, `kol:first_touches`, `deployer:alerts`, `wallet_tracker:events`, `copytrade:signals`, `price_alert:events`, `sniper:deploys`, `token:graduations`, `token:prices` (**new** in the channel list — event `token:price`, per-mint price/MC ticks; PRO+, REQUIRES `filters.mints` — PRO 25 / ULTRA 100 / BUSINESS 250 per connection; a state stream, so ticks carry no id/seq and are never replayed) (every pump.fun graduation in real time, tracked deployer or not — typed `GraduationEvent`), `token:locks` (**new 1.27** — event `token:lock` for every NEW Streamflow / Jupiter Lock / Bonfida lock or vesting contract, typed `TokenLockStreamEvent`; PRO+; updates are not pushed on a plain subscription — poll `rest.tokenLocks()`, or opt into lifecycle events, below), `token:fee_claims` (**new 1.27** — event `token:fee_claim` for every pump.fun fee event: distributions, social-handle claims, config changes, typed `TokenFeeClaimStreamEvent`; PRO+), `token:surges` (**new 1.28** — events `token:surge` (a token < 30 min old running ≥3× / ≥6× / ≥8× its launch MC — `tier` early / strong / breakout, each once per mint, sustained) and `token:revival` (≥24 h with no trade candle, then confirmed buys on the tape; `tier` null), typed `TokenSurgeStreamEvent` — the same row as `rest.tokensSurges()` minus `outcome`, `risk_flags[]` included; subscribe filters `kinds[]`, `tiers[]`, `launchpads[]`, `exclude_flags[]`, `min_mc_usd` / `max_mc_usd`, `deployer_tier[]`; PRO+). Lifecycle events: `open`, `close`, `reconnect`, `subscribed`, `heartbeat`, `warning`, `cursor`, `replay`, `gap`, `fatal`, `error`. Uses the global `WebSocket` on Node 22+; on Node < 22 also `npm i ws`.
 
 #### Recovery: cursor, resume, de-duplication *(new in 2.2.0)*
 
@@ -482,6 +482,21 @@ stream.on("kol:trade", (t, evt) => console.log(evt!.sub_id, t)); // "kol-buys"
 stream.updateSubscription("kol-buys", { action: "buy", min_sol: 5 });
 console.log(await stream.listSubscriptions()); // [{ subId, channels, filters }, …]
 stream.unsubscribe("deploys");
+```
+
+#### Lock lifecycle on `token:locks` *(server 2026-09-23)*
+
+Add `filters.lifecycle: true` to a `token:locks` subscription to also receive what happens to a lock after it is created: `token:lock_claimed`, `token:lock_cancelled`, `token:lock_closed`, `token:lock_updated` (`change`: `topup` | `extended` | `schedule_changed` | `recipient_changed`, one event per change) and the unlock schedule, `token:unlock_upcoming` (the lock's next unlock is within 24 h) and `token:unlock_available` (the unlock passed within the last 30 min — **claimable per the schedule, not claimed**). Without `lifecycle` the channel is unchanged. Optional filters: `events[]`, `unlock_kinds[]` (`cliff` | `period` | `final` | `tranche`), `mints[]` (≤ 500) and `include_automatic_claims` (default `false`: Streamflow keeper-cranked withdrawals, about 90 % of all claims, are hidden unless you set it). Typed `TokenLockLifecycleFilters` / `TokenLockLifecycleEvent`. Amounts are raw strings; no USD field. Events are deduplicated server-side and never emitted for history (backfills and reconciliation do not alert); `claimed_raw` is the change since the tracker's last observed state.
+
+```ts
+const stream = rest.stream();
+stream.subscribe({
+  subId: "locks",
+  channels: ["token:locks"],
+  filters: { lifecycle: true, events: ["token:lock_claimed", "token:unlock_available"], mints: [MINT] },
+});
+stream.on("token:lock_claimed", (e: TokenLockClaimedEvent) => console.log("claimed", e.claimed_raw, "remaining", e.remaining_raw));
+stream.on("token:unlock_available", (e: TokenUnlockScheduleEvent) => console.log(e.unlock_kind, e.amount_raw, "claimable (not claimed)"));
 ```
 
 ### Live stream sessions *(new in 1.18)*
@@ -534,6 +549,18 @@ ws.on("message", (raw) => {
 ```
 
 **Operations** (all carry `sub_id`): `subscribe`, `update` (replace filters in place), `unsubscribe`, `list`, `ping`. **Filters:** `token_mint(s)` (≤50), `wallet(s)` (≤50), `dex`, `program`, `deployer_tier`, `token_age_max_seconds`, `market_cap_min/max_sol`, `min_sol`, `max_sol`, `action`. At least one targeting filter is required. Inbound rate limit: 5 messages/sec.
+
+**Liquidity events (server 2026-09-23).** Add `liquidity: true` (in addition to trades) or `liquidity: "only"` to a subscribe to receive `dex:liquidity` frames: one per liquidity instruction (`action` `pool_created` | `add` | `remove`), with `id` = `<signature>:<ix>[.<inner>]`, `pool`, `mints[]` (raw `amount_raw`, `side` in/out), `reserves_before[]` / `reserves_after[]`, `share_of_reserves` (constant-product pools only), `material` (a removal of ≥ 25 % of reserves) and `depth_effect`. Extra filters: `pool(s)`, `actions[]`, `min_share_of_reserves`, `material_only`. Limits: only fixture-verified instructions are emitted (the ack's `liquidity_coverage.instructions[].emits_events`); concentrated pools (CLMM, Whirlpool, DLMM) report share/depth as unknown; DAMM v1, LaunchLab and Moonshot are not emitted; no USD field (`min_usd` is rejected); replay from the in-memory ring only.
+
+```ts
+ws.send(JSON.stringify({
+  type: "subscribe",
+  sub_id: "lp-pulls",
+  liquidity: "only",
+  filters: { dex: ["raydium", "pumpswap", "meteora"], actions: ["remove"], material_only: true },
+}));
+// → { channel: "dex:liquidity", sub_id: "lp-pulls", id, data: { action, pool, mints, share_of_reserves, material, ... } }
+```
 
 Full protocol reference: [madeonsol.com/api-docs#streaming](https://madeonsol.com/api-docs#streaming).
 
