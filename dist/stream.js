@@ -13,6 +13,9 @@ export const STREAM_CHANNELS = [
     "token:locks",
     "token:fee_claims",
     "token:surges",
+    "token:candles",
+    "token:risk",
+    "wallet:scores",
 ];
 async function resolveWebSocket(override) {
     if (override)
