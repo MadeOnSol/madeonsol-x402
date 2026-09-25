@@ -475,6 +475,17 @@ export interface WebhookTestResult {
     status_code?: number;
     response_time_ms: number;
     error?: string;
+    /** Which event type the sample delivery used. Returned by servers from 2026-09-25 on. */
+    event?: string;
+}
+/** Options for `testWebhook`. */
+export interface WebhookTestOptions {
+    /**
+     * Which of the webhook's subscribed events to sample (sent as `event`).
+     * Omit it to sample the first subscribed event. An event the webhook is not
+     * subscribed to is answered with 400.
+     */
+    event?: WebhookEvent | (string & {});
 }
 export interface StreamToken {
     token: string;
@@ -1253,20 +1264,58 @@ export interface CopyTradeSubscription {
     sizing_amount: number;
     delivery_mode: CopyTradeDeliveryMode;
     webhook_url: string | null;
+    /** Market-cap band (USD) on the source trade; `null` = no bound. */
+    min_mc_usd: number | null;
+    max_mc_usd: number | null;
     is_active: boolean;
     created_at: string;
     updated_at?: string;
+    /**
+     * Source wallets that are tracked KOL wallets (can produce signals), read at
+     * response time. `null` when the tracking lookup failed (see `warnings`).
+     * Returned by servers from 2026-09-25 on; absent on older ones.
+     */
+    source_wallets_tracked?: string[] | null;
+    /** Source wallets that are NOT tracked KOL wallets: they never produce a signal. */
+    source_wallets_untracked?: string[] | null;
+    /** Present when at least one wallet is untracked, or tracking could not be determined. */
+    warnings?: CopyTradeRuleWarning[];
 }
+/** A non-fatal note on a copy-trade rule. The rule is saved unchanged. */
+export interface CopyTradeRuleWarning {
+    code: "untracked_source_wallets" | "source_wallet_tracking_unavailable" | (string & {});
+    message: string;
+}
+/**
+ * Create body for POST /copytrade/subscriptions.
+ *
+ * `source_wallets`: the per-rule limit is set by your tier and enforced by the
+ * server (Pro 5, Ultra 50, Business and Enterprise 250; `GET /me` reports
+ * yours as `copytrade_wallets_per_rule`). Signals fire only for trades by
+ * wallets MadeOnSol tracks as KOLs (`GET /kol/wallets`). Any valid Solana
+ * address is accepted into a rule, but an untracked wallet never produces a signal.
+ */
 export interface CopyTradeCreateParams {
     name?: string;
     source_wallets: string[];
     min_trade_sol?: number;
+    /** Default `"buy"` (server side) when omitted. */
     only_action?: CopyTradeAction;
+    /** `proportional` and `percent_source` are the same maths: source size × `sizing_amount`. */
     sizing_mode?: CopyTradeSizingMode;
+    /** SOL when `fixed`; otherwise a multiplier / fraction (0.25 = a quarter of the source size), never a percent. */
     sizing_amount: number;
     delivery_mode?: CopyTradeDeliveryMode;
     webhook_url?: string;
+    /**
+     * Market-cap band (USD, 0 to 1e12, min ≤ max) on the source trade's market
+     * cap at trade time. When either bound is set, trades with an unknown market
+     * cap are dropped.
+     */
+    min_mc_usd?: number | null;
+    max_mc_usd?: number | null;
 }
+/** PATCH body. Omit a field to leave it unchanged; pass `null` to clear an MC bound. */
 export interface CopyTradeUpdateParams {
     name?: string | null;
     source_wallets?: string[];
@@ -1277,11 +1326,29 @@ export interface CopyTradeUpdateParams {
     delivery_mode?: CopyTradeDeliveryMode;
     webhook_url?: string | null;
     is_active?: boolean;
+    min_mc_usd?: number | null;
+    max_mc_usd?: number | null;
 }
 export interface CopyTradeCreateResponse {
     subscription: CopyTradeSubscription;
     /** Returned ONCE on creation when `webhook_url` is set — store it to verify HMAC signatures. */
     webhook_secret: string | null;
+    note?: string;
+    /** Same as `subscription.warnings`, repeated at top level when present. */
+    warnings?: CopyTradeRuleWarning[];
+}
+/** Response of PATCH /copytrade/subscriptions/{id} (and GET of one rule). */
+export interface CopyTradeUpdateResponse {
+    subscription: CopyTradeSubscription;
+    /** Same as `subscription.warnings`, repeated at top level when present. */
+    warnings?: CopyTradeRuleWarning[];
+    /**
+     * Returned ONCE, only when this PATCH set a `webhook_url` on a rule that had
+     * no signing secret yet (for example a websocket-only rule). Store it. An
+     * existing secret is never rotated or re-shown.
+     */
+    webhook_secret?: string;
+    /** Explains the one-time `webhook_secret` when it is present. */
     note?: string;
 }
 export interface CopyTradeSignal {
@@ -1313,6 +1380,10 @@ export interface CopyTradeSignalsParams {
     since?: string;
     /** 1–500, default 50. */
     limit?: number;
+    /** Keep signals whose source trade's market cap (USD) was at least this. Drops unknown-MC signals. */
+    min_mc_usd?: number;
+    /** Keep signals whose source trade's market cap (USD) was at most this. Drops unknown-MC signals. */
+    max_mc_usd?: number;
 }
 export interface WalletTrackerEntry {
     wallet_address: string;
@@ -1333,34 +1404,72 @@ export interface WalletTrackerUpdateResponse {
     updated: boolean;
     watchlist: WalletTrackerEntry;
 }
-export type WalletTrackerAction = "buy" | "sell" | "transfer_in" | "transfer_out";
+/**
+ * The `action` filter and field. Swaps only: a swap is `buy` or `sell`.
+ * Transfers carry `action: null` (their direction is not stored), so select
+ * them with `event_type: "transfer"`. The API answers any other value with 400.
+ * Before 2.6.0 this union also listed `transfer_in` / `transfer_out`, which the
+ * API never accepted.
+ */
+export type WalletTrackerAction = "buy" | "sell";
 export type WalletTrackerEventType = "swap" | "transfer";
 export interface WalletTrackerTradesParams {
     wallet?: string;
+    /** Swaps only; see {@link WalletTrackerAction}. */
     action?: WalletTrackerAction;
     event_type?: WalletTrackerEventType;
     /** 1–200, default 50. */
     limit?: number;
-    /** Pagination cursor — block_time of the last event from previous page. */
+    /**
+     * Sort column. `slot` = on-chain position (the default on a first page).
+     * `block_time` = our INGEST clock (the default when you pass the legacy
+     * `before` cursor). An explicit value always wins.
+     */
+    order?: "slot" | "block_time";
+    /** Cursor for `order: "block_time"`: the previous page's `next_cursor`. */
     before?: number;
+    /** Cursor for `order: "slot"`: the previous page's `next_cursor_slot`. */
+    before_slot?: number;
 }
+/** One event of GET /wallet-tracker/trades. The field set mirrors the route. */
 export interface WalletTrackerTrade {
-    block_time: number;
-    wallet: string;
-    action: WalletTrackerAction;
+    wallet_address: string;
+    label: string | null;
     event_type: WalletTrackerEventType;
-    token_mint?: string;
-    token_symbol?: string;
-    sol_amount?: number;
-    token_amount?: number;
-    tx_signature?: string;
+    /** `buy` / `sell` on swaps, `null` on transfers. */
+    action: WalletTrackerAction | null;
+    token_mint: string | null;
+    token_symbol: string | null;
+    token_name: string | null;
+    sol_amount: number | null;
+    token_amount: number | null;
+    /** Present only when a counterparty was matched (the key is absent otherwise). */
     counterparty?: string;
-    label?: string | null;
+    tx_signature: string;
+    /** Unix seconds on the tracker's INGEST clock, not chain time. Use `slot` for chain order. */
+    block_time: number;
+    /** On-chain slot. `null` on rows written before slot tracking existed. */
+    slot: number | null;
+    /** `true` when the row arrived through a replay (reconnect or restart recovery), not live delivery. */
+    replayed: boolean;
+    /** ISO 8601 form of `block_time` (ingest time). */
+    ingested_at: string;
+    /** Alias of `ingested_at`, kept for older consumers. It never meant chain time. */
+    timestamp: string;
 }
+/**
+ * Response of GET /wallet-tracker/trades. Before 2.6.0 this type declared
+ * `trades` / `has_more` / `next`, which the API never returned.
+ */
 export interface WalletTrackerTradesResponse {
-    trades: WalletTrackerTrade[];
-    has_more: boolean;
-    next?: number;
+    events: WalletTrackerTrade[];
+    count: number;
+    /** Which column this page was ordered by. */
+    ordered_by: "slot" | "block_time";
+    /** `block_time` cursor for the next page (`before`); `null` on the last page. */
+    next_cursor: number | null;
+    /** Slot cursor for the next page (`before_slot`); `null` on the last page or on a page of pre-slot rows. */
+    next_cursor_slot: number | null;
 }
 export interface WalletTrackerSummaryParams {
     /** "24h" | "7d" | "30d" — default "7d" */
@@ -1742,7 +1851,9 @@ export interface MeResponse {
             limit: number;
             used: number;
         };
+        /** `limit` = the watchlist cap POST /wallet-tracker/watchlist enforces (servers from 2026-09-25 on). */
         wallet_tracker_watchlist: {
+            limit?: number;
             used: number;
         };
     };

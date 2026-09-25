@@ -29,6 +29,7 @@ import type {
   WebhookWithSecret,
   WebhookDelivery,
   WebhookTestResult,
+  WebhookTestOptions,
   StreamToken,
   StreamSessionsResponse,
   StreamSessionEvictResponse,
@@ -79,6 +80,8 @@ import type {
   CopyTradeCreateParams,
   CopyTradeCreateResponse,
   CopyTradeUpdateParams,
+  CopyTradeUpdateResponse,
+  CopyTradeRuleWarning,
   CopyTradeSignal,
   CopyTradeSignalsParams,
   CoordinationAlertRule,
@@ -208,6 +211,7 @@ export type {
   UpdateWebhookParams,
   WebhookDelivery,
   WebhookTestResult,
+  WebhookTestOptions,
   StreamToken,
   StreamSession,
   StreamSessionsResponse,
@@ -377,6 +381,8 @@ export type {
   CopyTradeCreateParams,
   CopyTradeUpdateParams,
   CopyTradeCreateResponse,
+  CopyTradeUpdateResponse,
+  CopyTradeRuleWarning,
   CopyTradeSignal,
   CopyTradeSignalsParams,
   CoordinationDeliveryMode,
@@ -934,9 +940,14 @@ export class MadeOnSolREST {
     return this.request("DELETE", `/webhooks/${id}`);
   }
 
-  /** Send a test payload to verify your webhook URL. */
-  async testWebhook(webhookId: number): Promise<WebhookTestResult> {
-    return this.request("POST", "/webhooks/test", { webhook_id: webhookId });
+  /**
+   * Send a test payload to verify your webhook URL. Pass `{ event }` to choose
+   * which of the webhook's subscribed events is sampled (default: the first).
+   */
+  async testWebhook(webhookId: number, options?: WebhookTestOptions): Promise<WebhookTestResult> {
+    const body: { webhook_id: number; event?: string } = { webhook_id: webhookId };
+    if (options?.event !== undefined) body.event = options.event;
+    return this.request("POST", "/webhooks/test", body);
   }
 
   /** KOL entry/exit timing profile — hold duration, exit speed, activity patterns. */
@@ -1596,7 +1607,7 @@ export class MadeOnSolREST {
     return this.request("GET", "/signals");
   }
 
-  /* ── Copy-Trade (PRO/ULTRA) ── */
+  /* ── Copy-Trade (PRO+) ── */
 
   /** List your copy-trade rules. */
   async copyTradeList(): Promise<{ subscriptions: CopyTradeSubscription[] }> {
@@ -1609,12 +1620,16 @@ export class MadeOnSolREST {
   }
 
   /** Get one copy-trade rule by id. */
-  async copyTradeGet(id: number): Promise<{ subscription: CopyTradeSubscription }> {
+  async copyTradeGet(id: number): Promise<{ subscription: CopyTradeSubscription; warnings?: CopyTradeRuleWarning[] }> {
     return this.request("GET", `/copytrade/subscriptions/${id}`);
   }
 
-  /** Update a copy-trade rule. */
-  async copyTradeUpdate(id: number, params: CopyTradeUpdateParams): Promise<{ subscription: CopyTradeSubscription }> {
+  /**
+   * Update a copy-trade rule. When this PATCH sets a `webhook_url` on a rule
+   * that had no signing secret, the response carries `webhook_secret` ONCE:
+   * store it.
+   */
+  async copyTradeUpdate(id: number, params: CopyTradeUpdateParams): Promise<CopyTradeUpdateResponse> {
     return this.request("PATCH", `/copytrade/subscriptions/${id}`, params);
   }
 

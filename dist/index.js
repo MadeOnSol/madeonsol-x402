@@ -355,9 +355,15 @@ export class MadeOnSolREST {
     async deleteWebhook(id) {
         return this.request("DELETE", `/webhooks/${id}`);
     }
-    /** Send a test payload to verify your webhook URL. */
-    async testWebhook(webhookId) {
-        return this.request("POST", "/webhooks/test", { webhook_id: webhookId });
+    /**
+     * Send a test payload to verify your webhook URL. Pass `{ event }` to choose
+     * which of the webhook's subscribed events is sampled (default: the first).
+     */
+    async testWebhook(webhookId, options) {
+        const body = { webhook_id: webhookId };
+        if (options?.event !== undefined)
+            body.event = options.event;
+        return this.request("POST", "/webhooks/test", body);
     }
     /** KOL entry/exit timing profile — hold duration, exit speed, activity patterns. */
     async kolTiming(wallet, params) {
@@ -954,7 +960,7 @@ export class MadeOnSolREST {
     async signals() {
         return this.request("GET", "/signals");
     }
-    /* ── Copy-Trade (PRO/ULTRA) ── */
+    /* ── Copy-Trade (PRO+) ── */
     /** List your copy-trade rules. */
     async copyTradeList() {
         return this.request("GET", "/copytrade/subscriptions");
@@ -967,7 +973,11 @@ export class MadeOnSolREST {
     async copyTradeGet(id) {
         return this.request("GET", `/copytrade/subscriptions/${id}`);
     }
-    /** Update a copy-trade rule. */
+    /**
+     * Update a copy-trade rule. When this PATCH sets a `webhook_url` on a rule
+     * that had no signing secret, the response carries `webhook_secret` ONCE:
+     * store it.
+     */
     async copyTradeUpdate(id, params) {
         return this.request("PATCH", `/copytrade/subscriptions/${id}`, params);
     }
