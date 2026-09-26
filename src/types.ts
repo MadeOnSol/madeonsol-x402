@@ -1141,7 +1141,7 @@ export interface TokenRiskAssessment {
   explanations?:  Record<string, string> & { band_cap?: string };
 }
 
-/** Transparent 0–100 token rug-risk/safety score (higher = riskier). PRO/ULTRA only. */
+/** Transparent 0–100 token risk score (higher = riskier): risk evidence for your own policy, not a verdict. PRO/ULTRA only. */
 export interface TokenRiskResponse {
   mint:          string;
   risk_score:    number;

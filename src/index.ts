@@ -510,6 +510,49 @@ export interface MadeOnSolClientOptions {
   baseUrl?: string;
 }
 
+/**
+ * x402-prefixed paths this client calls that have NO keyless x402 route: the
+ * server's x402 price catalog never listed them and production answers 404.
+ * They work with an API key (the prefix is rewritten to `/api/v1/`); in x402
+ * (private-key) mode the method throws before any network call or payment.
+ * `{param}` stands for one path segment.
+ */
+export const X402_UNAVAILABLE_PATHS: readonly string[] = [
+  "/api/x402/kol/scouts/leaderboard",
+  "/api/x402/kol/coordination/history",
+  "/api/x402/tokens/{mint}/kol-consensus",
+  "/api/x402/tokens/{mint}/peak-history",
+  "/api/x402/tokens/{mint}/bundle",
+];
+
+const X402_UNAVAILABLE_RES = X402_UNAVAILABLE_PATHS.map(
+  (p) => [p, new RegExp(`^${p.replace(/\{[^}]+\}/g, "[^/]+")}$`)] as const,
+);
+
+/**
+ * Thrown in x402 (private-key) mode by a method whose path is in
+ * {@link X402_UNAVAILABLE_PATHS}. Same name as the Robinhood Chain SDK's error.
+ */
+export class KeylessNotAvailableError extends Error {
+  readonly path: string;
+  constructor(path: string) {
+    super(
+      `${path} is not available via x402 (no keyless route; the server answers 404). ` +
+      "Use an API-key client instead: createClient(process.env.MADEONSOL_API_KEY). " +
+      "Free key at https://madeonsol.com/pricing",
+    );
+    this.name = "KeylessNotAvailableError";
+    this.path = path;
+  }
+}
+
+/** The unavailable template `path` matches, or null when x402 serves it. */
+export function x402UnavailablePath(path: string): string | null {
+  const bare = path.split("?")[0];
+  for (const [template, re] of X402_UNAVAILABLE_RES) if (re.test(bare)) return template;
+  return null;
+}
+
 /** @deprecated Use MadeOnSolClient instead */
 export interface MadeOnSolX402Options {
   privateKey: string;
@@ -560,6 +603,10 @@ export class MadeOnSolX402 {
   }
 
   private async request<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+    if (this.authMode === "x402") {
+      const template = x402UnavailablePath(path);
+      if (template) throw new KeylessNotAvailableError(template);
+    }
     await this.ready;
     const apiPath = this.authMode === "x402" ? path : path.replace("/api/x402/", "/api/v1/");
     const url = new URL(apiPath, this.baseUrl);
@@ -675,6 +722,8 @@ export class MadeOnSolX402 {
   /**
    * v1.9 — Scout leaderboard: top KOLs ranked by scout score, first-touch frequency,
    * and swarm attraction rate. ULTRA only.
+   * **API key only:** there is no keyless x402 route for this path, so in
+   * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
    */
   async scoutLeaderboard(params?: ScoutLeaderboardParams): Promise<unknown> {
     return this.request("/api/x402/kol/scouts/leaderboard", params as Record<string, string | number | undefined>);
@@ -683,6 +732,8 @@ export class MadeOnSolX402 {
   /**
    * v1.9 — Coordination history: past coordination alert fires with token, score, KOL count.
    * ULTRA only.
+   * **API key only:** there is no keyless x402 route for this path, so in
+   * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
    */
   async coordinationHistory(params?: CoordinationHistoryParams): Promise<unknown> {
     return this.request("/api/x402/kol/coordination/history", params as Record<string, string | number | undefined>);
@@ -691,6 +742,8 @@ export class MadeOnSolX402 {
   /**
    * v1.9 — KOL consensus on a token: how many KOLs bought/sold, exit rate,
    * net flow, median entry MC. ULTRA gets individual wallet arrays.
+   * **API key only:** there is no keyless x402 route for this path, so in
+   * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
    */
   async kolConsensus(mint: string): Promise<KolConsensusResponse> {
     return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/kol-consensus`);
@@ -699,17 +752,23 @@ export class MadeOnSolX402 {
   /**
    * v1.9 — Peak MC history for a token: ATH, decline from peak, MC at bond
    * and at 1h/6h/24h/7d after bond.
+   * **API key only:** there is no keyless x402 route for this path, so in
+   * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
    */
   async peakHistory(mint: string): Promise<PeakHistoryResponse> {
     return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/peak-history`);
   }
 
-  /** Token rug/safety score (0–100) with a per-factor breakdown — the "is this safe to buy?" call. */
+  /** Token risk score (0–100, higher = riskier) with a per-factor breakdown — risk evidence for your own policy, not a verdict. */
   async tokenRisk(mint: string): Promise<TokenRiskResponse> {
     return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/risk`);
   }
 
-  /** Bundle-cohort holdings for a token — `held_pct_of_supply` (net held / supply) is the headline "are the bundlers still holding?" read. */
+  /**
+   * Bundle-cohort holdings for a token — `held_pct_of_supply` (net held / supply) is the headline "are the bundlers still holding?" read.
+   * **API key only:** there is no keyless x402 route for this path, so in
+   * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
+   */
   async tokenBundle(mint: string): Promise<TokenBundleResponse> {
     return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/bundle`);
   }
@@ -1079,7 +1138,8 @@ export class MadeOnSolREST {
    * One deployer's profile — tier, lifetime and recent bond rates, totals,
    * best-token peak MC, and `runner_rate` (share of labeled tokens that ran
    * rather than dumped; gate on `labeled_tokens >= 3`). An untracked wallet
-   * returns a profile with zeroed counters, not a 404.
+   * returns HTTP 200 with `is_deployer: false` and `deployer: null`, not a 404;
+   * the counters (`total_tokens_deployed`, `total_bonded`, ...) live under `deployer`.
    * `GET /deployer-hunter/{wallet}`
    * @param wallet Deployer wallet (base58).
    */
@@ -1291,7 +1351,7 @@ export class MadeOnSolREST {
   }
 
   /**
-   * Transparent 0–100 token rug-risk/safety score (higher = riskier). Returns a
+   * Transparent 0–100 token risk score (higher = riskier): risk evidence for your own policy, not a verdict. Returns a
    * `band` (safe/caution/danger), an explainable `factors` array, and the raw
    * `inputs` (authorities, liquidity, transfer fee, launch cohort, deployer bond
    * rate, KOL signal, blacklist). **v1.22:** also returns a top-level `dev` block
@@ -1557,7 +1617,7 @@ export class MadeOnSolREST {
     return this.request("GET", "/tokens/surges", undefined, q);
   }
   /**
-   * Bulk token rug-risk/safety scoring — up to 50 mints in one call (counts as 1
+   * Bulk token risk scoring (evidence, not a verdict) — up to 50 mints in one call (counts as 1
    * request against quota). Each entry in `tokens` is either a full risk result
    * (same shape as {@link tokenRisk}, plus `as_of`) or `{ mint, error: "not_tracked" }`
    * for untracked mints — untracked mints do NOT fail the batch. `tokens`
