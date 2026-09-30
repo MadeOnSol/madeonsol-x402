@@ -2774,8 +2774,10 @@ export interface TokenDepthUnsupportedPool extends TokenDepthPoolBase {
 /**
  * v1.22 — Per-pool price-impact / slippage for a token: "how much SOL to move
  * price N%" and impact per buy size, per pool (GET /tokens/{mint}/depth).
- * Impact is per-pool, NOT router-optimal. When no pools are tracked:
- * `{ found: false, pools: [], unsupported_pools: [] }`. PRO/ULTRA only.
+ * Impact is per-pool, NOT router-optimal. `found: false` = no pool with
+ * sufficient authoritative data for depth: tracked pools that lack it are
+ * listed in `unsupported_pools` with a `reason`; with no tracked pool at all
+ * both arrays are empty. PRO/ULTRA only.
  */
 export interface TokenDepthResponse {
   mint:              string;

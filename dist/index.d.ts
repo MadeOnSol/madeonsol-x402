@@ -1,5 +1,7 @@
 import { type SolanaPaymentPolicy } from "./solana-payment.js";
+import { type PaidResultProvenance, type RecoveryOptions } from "./x402-recovery.js";
 export { SolanaPaymentBudget, type SolanaPaymentPolicy, type SolanaPaymentProposal } from "./solana-payment.js";
+export { X402PaymentError, readPaidResult, x402RequestHash, recoveryMessage, paymentIdFromProof, classifyPaidResponse, PAYMENT_RECOVERY_HEADER, type PaidResultProvenance, type RecoveryOptions, } from "./x402-recovery.js";
 import type { KolFeedParams, KolFeedResponse, KolCoordinationParams, KolCoordinationResponse, KolLeaderboardParams, KolLeaderboardResponse, KolPairsParams, KolPairsResponse, KolTimingParams, KolTimingResponse, KolHotTokensParams, KolHotTokensResponse, KolEntryOrderParams, KolEntryOrderResponse, KolCompareParams, KolCompareResponse, KolAlertsParams, KolAlertsResponse, DeployerAlertsParams, DeployerAlertsResponse, DeployerTrajectoryResponse, DiscoveryResponse, CreateWebhookParams, UpdateWebhookParams, Webhook, WebhookWithSecret, WebhookDelivery, WebhookTestResult, WebhookTestOptions, StreamToken, StreamSessionsResponse, StreamSessionEvictResponse, AlphaLeaderboardParams, AlphaLeaderboardResponse, AlphaWalletResponse, AlphaLinkedResponse, TokenCapTableResponse, TokenBuyerQualityResponse, TokenRiskResponse, TokenBatchRiskResponse, TokenBundleResponse, TokenPoolsResponse, TokenDepthParams, TokenDepthResponse, TokenHoldersResponse, TokenLocksParams, TokenLocksResponse, TokenLocksFeedParams, TokenLocksFeedResponse, TokenUnlocksParams, TokenUnlocksResponse, TokenFeeSharesResponse, TokenFeeClaimsParams, TokenFeeClaimsResponse, TokenSurgesParams, TokenSurgesResponse, DeployerHistoryResponse, DeployerAsOfResponse, DeployerRewardsResponse, DeployerStatsResponse, DeployerLeaderboardParams, DeployerLeaderboardResponse, DeployerProfileResponse, DeployerTokensParams, DeployerTokensResponse, DeployerAlertStatsParams, DeployerAlertStatsResponse, BestTokensParams, BestTokensResponse, RecentBondsParams, RecentBondsResponse, CandlesParams, CandlesResponse, TokenFlowParams, TokenFlowResponse, CopyTradeSubscription, CopyTradeCreateParams, CopyTradeCreateResponse, CopyTradeUpdateParams, CopyTradeUpdateResponse, CopyTradeRuleWarning, CopyTradeSignal, CopyTradeSignalsParams, CoordinationAlertRule, CoordinationAlertCreateParams, CoordinationAlertUpdateParams, CoordinationAlertListResponse, CoordinationAlertCreateResponse, FirstTouchesParams, FirstTouchesResponse, FirstTouchSubscription, FirstTouchSubscriptionCreateParams, FirstTouchSubscriptionUpdateParams, FirstTouchSubscriptionListResponse, FirstTouchSubscriptionCreateResponse, WalletTrackerListResponse, WalletTrackerAddResponse, WalletTrackerUpdateResponse, WalletTrackerTradesParams, WalletTrackerTradesResponse, WalletTrackerSummaryParams, WalletTrackerSummaryResponse, MeResponse, TokensListParams, TokensListResponse, AlmostBondedParams, AlmostBondedResponse, WalletStatsResponse, WalletPnlResponse, WalletPositionsResponse, WalletHoldingsParams, WalletHoldingsResponse, WalletTradesParams, WalletTradesResponse, PriceAlertCreateParams, PriceAlertUpdateParams, PriceAlertListResponse, PriceAlertCreateResponse, PriceAlertGetResponse, PriceAlertUpdateResponse, PriceAlertDeleteResponse, PriceAlertEventsParams, PriceAlertEventsResponse, ScoutLeaderboardParams, KolConsensusResponse, PeakHistoryResponse, CoordinationHistoryParams, TokenSnapshotResponse, SignalPerformanceResponse, SignalsCatalogResponse, WalletBatchClassifyResponse, TokenTradesParams, TokenTradesResponse, TokenTopTradersParams, TokenTopTradersResponse, SniperRecentParams, SniperRecentResponse } from "./types.js";
 import { MadeOnSolStream } from "./stream.js";
 import type { StreamClientOptions } from "./stream.js";
@@ -13,6 +15,11 @@ export interface MadeOnSolClientOptions {
     privateKey?: string;
     /** Required for keyless payments; explicit trusted merchant and spending limits. */
     paymentPolicy?: SolanaPaymentPolicy;
+    /**
+     * PAY-05 recovery bounds for a paid call whose answer was lost or is still
+     * pending (same proof + PAYMENT-RECOVERY; never a new payment, no budget).
+     */
+    recovery?: RecoveryOptions;
     /** API base URL (default: https://madeonsol.com) */
     baseUrl?: string;
 }
@@ -47,6 +54,13 @@ export declare class MadeOnSolX402 {
     private authHeaders;
     private ready;
     private paymentBudget?;
+    private recovery?;
+    /**
+     * x402 mode: provenance of the last paid answer (payment id, original vs
+     * deferred, live vs stored replay, paid/generated times, body sha256). A
+     * `deferred` answer was produced AFTER the payment and is not data from paidAt.
+     */
+    lastPaidResult: PaidResultProvenance | null;
     get authorizedAmountAtomic(): string;
     constructor(opts: MadeOnSolX402Options | MadeOnSolClientOptions);
     private initX402;

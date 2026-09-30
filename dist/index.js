@@ -1,5 +1,7 @@
 import { SolanaPaymentBudget, createSolanaPaidFetch } from "./solana-payment.js";
+import { readPaidResult, x402PaymentErrorFrom } from "./x402-recovery.js";
 export { SolanaPaymentBudget } from "./solana-payment.js";
+export { X402PaymentError, readPaidResult, x402RequestHash, recoveryMessage, paymentIdFromProof, classifyPaidResponse, PAYMENT_RECOVERY_HEADER, } from "./x402-recovery.js";
 import { MadeOnSolStream } from "./stream.js";
 import { VERSION } from "./version.js";
 export { MadeOnSolStream, STREAM_CHANNELS } from "./stream.js";
@@ -54,6 +56,13 @@ export class MadeOnSolX402 {
     authHeaders;
     ready;
     paymentBudget;
+    recovery;
+    /**
+     * x402 mode: provenance of the last paid answer (payment id, original vs
+     * deferred, live vs stored replay, paid/generated times, body sha256). A
+     * `deferred` answer was produced AFTER the payment and is not data from paidAt.
+     */
+    lastPaidResult = null;
     get authorizedAmountAtomic() { return this.paymentBudget?.authorizedAmountAtomic ?? "0"; }
     constructor(opts) {
         this.baseUrl = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
@@ -75,13 +84,14 @@ export class MadeOnSolX402 {
                 throw new Error("Provide apiKey or privateKey. Get a free API key at https://madeonsol.com/pricing");
             }
             this.paymentBudget = new SolanaPaymentBudget(clientOpts.paymentPolicy);
+            this.recovery = clientOpts.recovery;
             this.ready = this.initX402(pk);
             // Construction may precede the first request; retain the rejection for that request.
             void this.ready.catch(() => { });
         }
     }
     async initX402(privateKey) {
-        this.paidFetch = await createSolanaPaidFetch(privateKey, this.paymentBudget, this.baseUrl);
+        this.paidFetch = await createSolanaPaidFetch(privateKey, this.paymentBudget, this.baseUrl, fetch, this.recovery);
     }
     async request(path, params) {
         if (this.authMode === "x402") {
@@ -98,9 +108,17 @@ export class MadeOnSolX402 {
                     url.searchParams.set(k, String(v));
             }
         }
-        const res = this.authMode === "x402"
-            ? await this.paidFetch(url.toString())
-            : await fetch(url.toString(), { headers: this.authHeaders });
+        if (this.authMode === "x402") {
+            // PAY-05: the paid fetch already recovered with the same proof (bounded).
+            // A non-2xx answer is a coded X402PaymentError: `newPaymentAllowed` only
+            // for a proven 402 not_paid; `resume()` continues recovery, never repays.
+            const res = await this.paidFetch(url.toString());
+            this.lastPaidResult = readPaidResult(res);
+            if (!res.ok)
+                throw await x402PaymentErrorFrom(res, (body) => `MadeOnSol API error ${res.status}: ${body}`);
+            return res.json();
+        }
+        const res = await fetch(url.toString(), { headers: this.authHeaders });
         if (!res.ok) {
             const body = await res.text().catch(() => "");
             throw new Error(`MadeOnSol API error ${res.status}: ${body}`);
