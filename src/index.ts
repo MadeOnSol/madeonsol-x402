@@ -32,6 +32,9 @@ import type {
   UpdateWebhookParams,
   Webhook,
   WebhookWithSecret,
+  WebhookCondition,
+  WebhookDeliverySummary,
+  UpdatedWebhook,
   WebhookDelivery,
   WebhookTestResult,
   WebhookTestOptions,
@@ -45,6 +48,7 @@ import type {
   TokenCapTableResponse,
   TokenBuyerQualityResponse,
   TokenRiskResponse,
+  TokenRiskSingleResponse,
   TokenBatchRiskResponse,
   TokenBundleResponse,
   TokenPoolsResponse,
@@ -69,6 +73,7 @@ import type {
   DeployerLeaderboardParams,
   DeployerLeaderboardResponse,
   DeployerProfileResponse,
+  DeployerProfile,
   DeployerTokensParams,
   DeployerTokensResponse,
   DeployerAlertStatsParams,
@@ -133,7 +138,9 @@ import type {
   PriceAlertEventsResponse,
   ScoutLeaderboardParams,
   KolConsensusResponse,
+  KolConsensus,
   PeakHistoryResponse,
+  PeakHistory,
   CoordinationHistoryParams,
   TokenSnapshotResponse,
   SignalPerformanceResponse,
@@ -212,6 +219,9 @@ export type {
   WebhookFilters,
   Webhook,
   WebhookWithSecret,
+  WebhookCondition,
+  WebhookDeliverySummary,
+  UpdatedWebhook,
   CreateWebhookParams,
   UpdateWebhookParams,
   WebhookDelivery,
@@ -282,6 +292,9 @@ export type {
   TokenUnlockEventKind,
   TokenLockToken,
   TokenLockNextUnlock,
+  TokenLockProvider,
+  TokenLockExplorer,
+  TokenLockTranche,
   TokenLock,
   TokenLockFeedEntry,
   TokenLocksSummary,
@@ -289,6 +302,7 @@ export type {
   TokenLocksResponse,
   TokenLocksFeedParams,
   TokenFeedPagination,
+  TokenLocksFeedPagination,
   TokenFeedStreamPointer,
   TokenLocksFeedResponse,
   TokenUnlocksWithin,
@@ -364,6 +378,7 @@ export type {
   DeployerLeaderboardParams,
   DeployerLeaderboardResponse,
   DeployerProfileResponse,
+  DeployerProfile,
   DeployerTokensParams,
   DeployerTokensResponse,
   DeployerAlertStatsParams,
@@ -372,6 +387,11 @@ export type {
   BestTokensResponse,
   RecentBondsParams,
   RecentBondsResponse,
+  RecentBondDeployer,
+  TokenRiskSingleResponse,
+  TradeHistoryMeta,
+  DeployerTrajectorySnapshot,
+  McDeltaFields,
   CandleTimeframe,
   CandlesParams,
   Candle,
@@ -460,14 +480,16 @@ export type {
   ScoutLeaderboardSort,
   ScoutLeaderboardParams,
   KolConsensusResponse,
+  KolConsensus,
   PeakHistoryResponse,
+  PeakHistory,
   CoordinationHistoryParams,
   TokenSnapshotTopBuyer,
   TokenSnapshot,
   TokenSnapshotResponse,
   SignalName,
   SignalPerformanceBucket,
-  SignalPerformanceSeriesPoint,
+  SignalPerformanceHistoryPoint,
   SignalPerformanceResponse,
   SignalsCatalogEntry,
   SignalsCatalogResponse,
@@ -676,7 +698,7 @@ export class MadeOnSolX402 {
   }
 
   /** Tokens ranked by KOL buy volume. Sub-hour periods require PRO/ULTRA. */
-  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number }): Promise<unknown> {
+  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number; /** REST only (0-10000). */ offset?: number }): Promise<unknown> {
     return this.request("/api/x402/kol/tokens/trending", params as Record<string, string | number | undefined>);
   }
 
@@ -746,7 +768,7 @@ export class MadeOnSolX402 {
 
   /**
    * v1.9 — Scout leaderboard: top KOLs ranked by scout score, first-touch frequency,
-   * and swarm attraction rate. ULTRA only.
+   * and swarm attraction rate. PRO+ (was ULTRA until 2026-09-12).
    * **API key only:** there is no keyless x402 route for this path, so in
    * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
    */
@@ -756,7 +778,7 @@ export class MadeOnSolX402 {
 
   /**
    * v1.9 — Coordination history: past coordination alert fires with token, score, KOL count.
-   * ULTRA only.
+   * PRO+ (was ULTRA until 2026-09-12).
    * **API key only:** there is no keyless x402 route for this path, so in
    * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
    */
@@ -785,7 +807,7 @@ export class MadeOnSolX402 {
   }
 
   /** Token risk score (0–100, higher = riskier) with a per-factor breakdown — risk evidence for your own policy, not a verdict. */
-  async tokenRisk(mint: string): Promise<TokenRiskResponse> {
+  async tokenRisk(mint: string): Promise<TokenRiskSingleResponse> {
     return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/risk`);
   }
 
@@ -1005,7 +1027,7 @@ export class MadeOnSolREST {
   }
 
   /** List all your webhooks. */
-  async listWebhooks(): Promise<{ webhooks: Webhook[] }> {
+  async listWebhooks(): Promise<{ webhooks: Array<Webhook & { delivery_summary?: WebhookDeliverySummary }> }> {
     return this.request("GET", "/webhooks");
   }
 
@@ -1015,7 +1037,7 @@ export class MadeOnSolREST {
   }
 
   /** Update a webhook (URL, events, filters, or re-enable). */
-  async updateWebhook(id: number, params: UpdateWebhookParams): Promise<{ webhook: Webhook }> {
+  async updateWebhook(id: number, params: UpdateWebhookParams): Promise<{ webhook: UpdatedWebhook }> {
     return this.request("PATCH", `/webhooks/${id}`, params);
   }
 
@@ -1075,7 +1097,7 @@ export class MadeOnSolREST {
   }
 
   /** Tokens ranked by KOL buy volume. Sub-hour periods require PRO/ULTRA. */
-  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number }): Promise<unknown> {
+  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number; /** REST only (0-10000). */ offset?: number }): Promise<unknown> {
     return this.request("GET", "/kol/tokens/trending", undefined, params as Record<string, string | number | undefined>);
   }
 
@@ -1133,8 +1155,8 @@ export class MadeOnSolREST {
   }
 
   /** Deployer skill curve — streaks, rolling bond rate, improvement trend. */
-  async deployerTrajectory(wallet: string): Promise<DeployerTrajectoryResponse> {
-    return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/trajectory`);
+  async deployerTrajectory(wallet: string, params?: { include?: "daily_snapshots" }): Promise<DeployerTrajectoryResponse> {
+    return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/trajectory`, undefined, params as Record<string, string | undefined>);
   }
 
   /**
@@ -1390,7 +1412,7 @@ export class MadeOnSolREST {
    * row. Score v2: see `assessment`; a failed score-critical read is HTTP 503
    * `risk_inputs_unavailable`. PRO/ULTRA only — BASIC receives HTTP 403.
    */
-  async tokenRisk(mint: string): Promise<TokenRiskResponse> {
+  async tokenRisk(mint: string): Promise<TokenRiskSingleResponse> {
     return this.request("GET", `/tokens/${encodeURIComponent(mint)}/risk`);
   }
 
@@ -1448,8 +1470,9 @@ export class MadeOnSolREST {
    * (mint-scoped `getProgramAccounts`), merged per owner. Hard truths the payload
    * states rather than hides:
    * - `concentration.holder_count` is EXACT (distinct non-zero owners minus the
-   *   excluded pools/curves/burns). It is null ONLY when the provider refuses the
-   *   census for a mega-cap (TRUMP/JUP/BONK class) — then `source.method` is
+   *   excluded pools/curves/burns). It is null ONLY when the census is not served
+   *   (provider refusal for a TRUMP/JUP/BONK-class mega-cap, a timeout, or
+   *   balances adding up to more than the mint supply) — then `source.method` is
    *   `"getTokenLargestAccounts"`, `source.census_fallback_reason` is set and only
    *   the top-20 view is served. Never estimated from trades.
    * - Each disclosed owner carries `labels` from MadeOnSol wallet intelligence
@@ -1669,7 +1692,7 @@ export class MadeOnSolREST {
   /**
    * Live token snapshot — price (USD/SOL), VWAP, market cap, FDV, liquidity,
    * liquidity-to-MC ratio, primary DEX + pool, Token-2022 / transfer-fee flags,
-   * and a `top_buyers` array ({ name, sol_amount }). Returns `{ token: {...} }`.
+   * and KOL activity with a `kol_activity.top_buyers` array ({ name, sol_amount }). Returns `{ token: {...} }`.
    */
   async token(mint: string): Promise<TokenSnapshotResponse> {
     return this.request("GET", `/token/${encodeURIComponent(mint)}`);
@@ -1858,12 +1881,12 @@ export class MadeOnSolREST {
 
   /* ── v1.9 new read endpoints ── */
 
-  /** Scout leaderboard: top KOLs ranked by scout score and swarm attraction rate. ULTRA only. */
+  /** Scout leaderboard: top KOLs ranked by scout score and swarm attraction rate. PRO+. */
   async scoutLeaderboard(params?: ScoutLeaderboardParams): Promise<unknown> {
     return this.request("GET", "/kol/scouts/leaderboard", undefined, params as Record<string, string | number | undefined>);
   }
 
-  /** Coordination history: past coordination alert fires with token, score, KOL count. ULTRA only. */
+  /** Coordination history: past coordination alert fires with token, score, KOL count. PRO+. */
   async coordinationHistory(params?: CoordinationHistoryParams): Promise<unknown> {
     return this.request("GET", "/kol/coordination/history", undefined, params as Record<string, string | number | undefined>);
   }

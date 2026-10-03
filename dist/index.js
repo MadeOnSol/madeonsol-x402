@@ -207,7 +207,7 @@ export class MadeOnSolX402 {
     }
     /**
      * v1.9 — Scout leaderboard: top KOLs ranked by scout score, first-touch frequency,
-     * and swarm attraction rate. ULTRA only.
+     * and swarm attraction rate. PRO+ (was ULTRA until 2026-09-12).
      * **API key only:** there is no keyless x402 route for this path, so in
      * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
      */
@@ -216,7 +216,7 @@ export class MadeOnSolX402 {
     }
     /**
      * v1.9 — Coordination history: past coordination alert fires with token, score, KOL count.
-     * ULTRA only.
+     * PRO+ (was ULTRA until 2026-09-12).
      * **API key only:** there is no keyless x402 route for this path, so in
      * x402 (private-key) mode it throws `KeylessNotAvailableError` before any request or payment.
      */
@@ -518,8 +518,8 @@ export class MadeOnSolREST {
         return this.request("DELETE", `/sniper/watchlist/${encodeURIComponent(wallet)}`);
     }
     /** Deployer skill curve — streaks, rolling bond rate, improvement trend. */
-    async deployerTrajectory(wallet) {
-        return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/trajectory`);
+    async deployerTrajectory(wallet, params) {
+        return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/trajectory`, undefined, params);
     }
     /**
      * Ecosystem-wide deployer stats — how many deployers are tracked, how many
@@ -803,8 +803,9 @@ export class MadeOnSolREST {
      * (mint-scoped `getProgramAccounts`), merged per owner. Hard truths the payload
      * states rather than hides:
      * - `concentration.holder_count` is EXACT (distinct non-zero owners minus the
-     *   excluded pools/curves/burns). It is null ONLY when the provider refuses the
-     *   census for a mega-cap (TRUMP/JUP/BONK class) — then `source.method` is
+     *   excluded pools/curves/burns). It is null ONLY when the census is not served
+     *   (provider refusal for a TRUMP/JUP/BONK-class mega-cap, a timeout, or
+     *   balances adding up to more than the mint supply) — then `source.method` is
      *   `"getTokenLargestAccounts"`, `source.census_fallback_reason` is set and only
      *   the top-20 view is served. Never estimated from trades.
      * - Each disclosed owner carries `labels` from MadeOnSol wallet intelligence
@@ -1014,7 +1015,7 @@ export class MadeOnSolREST {
     /**
      * Live token snapshot — price (USD/SOL), VWAP, market cap, FDV, liquidity,
      * liquidity-to-MC ratio, primary DEX + pool, Token-2022 / transfer-fee flags,
-     * and a `top_buyers` array ({ name, sol_amount }). Returns `{ token: {...} }`.
+     * and KOL activity with a `kol_activity.top_buyers` array ({ name, sol_amount }). Returns `{ token: {...} }`.
      */
     async token(mint) {
         return this.request("GET", `/token/${encodeURIComponent(mint)}`);
@@ -1164,11 +1165,11 @@ export class MadeOnSolREST {
         return this.request("GET", "/price-alerts/events", undefined, params);
     }
     /* ── v1.9 new read endpoints ── */
-    /** Scout leaderboard: top KOLs ranked by scout score and swarm attraction rate. ULTRA only. */
+    /** Scout leaderboard: top KOLs ranked by scout score and swarm attraction rate. PRO+. */
     async scoutLeaderboard(params) {
         return this.request("GET", "/kol/scouts/leaderboard", undefined, params);
     }
-    /** Coordination history: past coordination alert fires with token, score, KOL count. ULTRA only. */
+    /** Coordination history: past coordination alert fires with token, score, KOL count. PRO+. */
     async coordinationHistory(params) {
         return this.request("GET", "/kol/coordination/history", undefined, params);
     }
