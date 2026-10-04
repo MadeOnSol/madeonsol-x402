@@ -97,7 +97,7 @@ export interface KolFeedParams {
     limit?: number;
     /** Poll cursor — only trades strictly newer than this ISO time (feed back next_since). */
     since?: string;
-    /** "token" embeds the /token/{mint} snapshot on each row (≤20 distinct mints per page). */
+    /** REST only: "token" embeds the /token/{mint} snapshot on each row (≤20 distinct mints per page). The x402 route rejects it before payment (400 param_not_supported_on_x402). */
     include?: "token";
     /** LEGACY cursor — ISO 8601 timestamp; returns trades strictly older than this (skips same-timestamp rows). Prefer `cursor`. */
     before?: string;
@@ -206,7 +206,7 @@ export interface KolCoordinationParams {
     unique_strategies?: boolean;
     /** v1.1 — include major memecoins (WIF/BONK/POPCAT). Default false. */
     include_majors?: boolean;
-    /** REST only: "risk" embeds /tokens/{mint}/risk per cluster (at most 20 distinct mints). The x402 route ignores it. */
+    /** REST only: "risk" embeds /tokens/{mint}/risk per cluster (at most 20 distinct mints). The x402 route rejects it before payment (400 param_not_supported_on_x402). */
     include?: "risk";
     /** v1.1 — peak-density window in minutes (1-60). Default 15. */
     window_minutes?: number;
@@ -466,7 +466,7 @@ export interface KolLeaderboardParams {
     /** Time window. 90d/180d fill up over time as kol_trades retention (180 days) accumulates. */
     period?: "today" | "7d" | "30d" | "90d" | "180d";
     limit?: number;
-    /** REST only (0-10000). The x402 route ignores it. */
+    /** REST only (0-10000). The x402 route rejects it before payment (400 param_not_supported_on_x402). */
     offset?: number;
     /** PRO+: sort axis (default "pnl") */
     sort?: KolLeaderboardSort;
@@ -735,7 +735,7 @@ export interface KolPairsParams {
     period?: "7d" | "30d";
     min_shared?: number;
     limit?: number;
-    /** REST only (0-10000). The x402 route ignores it. */
+    /** REST only (0-10000). The x402 route rejects it before payment (400 param_not_supported_on_x402). */
     offset?: number;
 }
 export interface KolTimingData {
@@ -813,7 +813,7 @@ export interface KolHotTokensParams {
     period?: "1h" | "6h";
     min_kols?: number;
     limit?: number;
-    /** REST only (0-10000): skip this many ranked tokens. The x402 route ignores it. */
+    /** REST only (0-10000): skip this many ranked tokens. The x402 route rejects it before payment (400 param_not_supported_on_x402). */
     offset?: number;
     /** PRO+: require average winrate_7d of buying KOLs >= N (0-100) */
     min_avg_winrate?: number;
@@ -2887,7 +2887,7 @@ export interface TokenTopTradersParams {
     window_days?: number;
     /** Minimum SOL bought to qualify (default 0.1). */
     min_bought_sol?: number;
-    /** REST only: skip this many ranked traders (bounded by the tier's row cap). The x402 route ignores it. */
+    /** REST only: skip this many ranked traders (bounded by the tier's row cap). The x402 route rejects it before payment (400 param_not_supported_on_x402). */
     offset?: number;
 }
 /** One wallet in a top-traders response, enriched with our own reputation data
@@ -2940,7 +2940,7 @@ export interface SniperRecentParams {
     min_bond_rate?: number;
     /** Max results, 1–200 (default 50). */
     limit?: number;
-    /** REST only, ULTRA: narrow to your custom deployer watchlist. The x402 route ignores it. */
+    /** REST only, ULTRA: narrow to your custom deployer watchlist. The x402 route rejects it before payment (400 param_not_supported_on_x402). */
     watchlist?: boolean;
 }
 /** One deshred-detected pump.fun deploy — surfaces ~500ms before on-chain
@@ -4622,7 +4622,10 @@ export interface DeployerProfileResponse {
     };
     /** PRO+ funding evidence (see the funding docs); absent below PRO. */
     funding?: Record<string, unknown>;
+    /** PRO+ flat funding features, incl. `funding_to_first_deploy_seconds` (to `deployer.first_deploy_at`). */
     funding_features?: Record<string, unknown>;
+    /** PRO+ capital relationships from high-signal sources (`launched_at` = `deployer.first_deploy_at`); absent below PRO. */
+    capital_intelligence?: Record<string, unknown>;
 }
 /** The `deployers` row inside {@link DeployerProfileResponse}. */
 export interface DeployerProfile {
@@ -4648,6 +4651,9 @@ export interface DeployerProfile {
     post_bond_2x_rate: number | null;
     post_bond_labeled_count: number | null;
     first_seen_at: string | null;
+    /** Earliest deploy observed by MadeOnSol for this wallet — not proof of its first-ever on-chain launch. Only moves earlier. */
+    first_deploy_at: string | null;
+    /** Latest deploy observed by MadeOnSol for this wallet. Only moves later. */
     last_deploy_at: string | null;
     last_bond_at: string | null;
     label: string | null;
@@ -4657,7 +4663,7 @@ export interface DeployerTokensParams {
     limit?: number;
     /** 0–10000, default 0. */
     offset?: number;
-    /** Documented, but NOT applied by the route today (rows are not filtered). */
+    /** true = only tokens that graduated (bonded_at set); total / has_more count the bonded set. */
     only_bonded?: boolean;
 }
 /** `GET /deployer-hunter/{wallet}/tokens` — newest bond first. */

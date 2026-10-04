@@ -79,7 +79,7 @@ export declare class MadeOnSolX402 {
     kolTrendingTokens(params?: {
         period?: string;
         min_kols?: number;
-        limit?: number; /** REST only (0-10000). */
+        limit?: number; /** REST only (0-10000); the x402 route rejects a non-zero offset (400 param_not_supported_on_x402). */
         offset?: number;
     }): Promise<unknown>;
     /** Ranked KOL first-buyer order for a token. PRO+ adds percentile_pnl_7d. */
@@ -297,7 +297,7 @@ export declare class MadeOnSolREST {
     kolTrendingTokens(params?: {
         period?: string;
         min_kols?: number;
-        limit?: number; /** REST only (0-10000). */
+        limit?: number; /** REST only (0-10000); the x402 route rejects a non-zero offset (400 param_not_supported_on_x402). */
         offset?: number;
     }): Promise<unknown>;
     /** Ranked KOL first-buyer order for a token. PRO+ adds percentile_pnl_7d. */

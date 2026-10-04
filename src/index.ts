@@ -698,7 +698,7 @@ export class MadeOnSolX402 {
   }
 
   /** Tokens ranked by KOL buy volume. Sub-hour periods require PRO/ULTRA. */
-  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number; /** REST only (0-10000). */ offset?: number }): Promise<unknown> {
+  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number; /** REST only (0-10000); the x402 route rejects a non-zero offset (400 param_not_supported_on_x402). */ offset?: number }): Promise<unknown> {
     return this.request("/api/x402/kol/tokens/trending", params as Record<string, string | number | undefined>);
   }
 
@@ -1097,7 +1097,7 @@ export class MadeOnSolREST {
   }
 
   /** Tokens ranked by KOL buy volume. Sub-hour periods require PRO/ULTRA. */
-  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number; /** REST only (0-10000). */ offset?: number }): Promise<unknown> {
+  async kolTrendingTokens(params?: { period?: string; min_kols?: number; limit?: number; /** REST only (0-10000); the x402 route rejects a non-zero offset (400 param_not_supported_on_x402). */ offset?: number }): Promise<unknown> {
     return this.request("GET", "/kol/tokens/trending", undefined, params as Record<string, string | number | undefined>);
   }
 
