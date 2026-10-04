@@ -621,6 +621,27 @@ export class MadeOnSolREST {
         return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/rewards`);
     }
     /**
+     * A deployer wallet's activity timeline: launches, its own dev buys/sells,
+     * creator transfers, fee claims, funding in and capital out, windowed on each
+     * event's own time (window PRO 30 d, ULTRA 365 d, BUSINESS unbounded; page
+     * size clamped to 100 / 100 / 500). History is online-only for now: read
+     * `coverage.families.<f>.complete` / `archive_required_before` and
+     * `plan.history.archive_only` before treating an empty range as "nothing
+     * happened". PRO+, KEYED (v1) only. New in 3.2.0.
+     */
+    async deployerActivity(wallet, opts) {
+        const q = {};
+        if (opts?.limit !== undefined)
+            q.limit = opts.limit;
+        if (opts?.cursor !== undefined)
+            q.cursor = opts.cursor;
+        if (opts?.since !== undefined)
+            q.since = opts.since;
+        if (opts?.types !== undefined)
+            q.types = opts.types;
+        return this.request("GET", `/deployer-hunter/${encodeURIComponent(wallet)}/activity`, undefined, Object.keys(q).length ? q : undefined);
+    }
+    /**
      * Issue your WebSocket streaming token. Stream tokens never expire (since
      * 2026-08-27): every call returns the same token until your subscription
      * lapses or you pass `{ rotate: true }`, which replaces it (the previous
