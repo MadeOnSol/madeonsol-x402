@@ -563,7 +563,9 @@ export interface DeployerAlertsParams {
 /** v2.10: every event the registry accepts (src/lib/webhook-events.ts VALID_EVENTS); earlier types listed only the first four. */
 export type WebhookEvent = "kol:trade" | "kol:coordination" | "deployer:alert" | "deployer:bond" | "wallet_tracker:event" | "sniper:deploy" | "rhc:kol_trade" | "token:surge" | "token:revival"
 /** Realtime developer sells / buys / token transfers (PRO+; identity fields ULTRA+). Dedupe on payload `id`. */
- | "dev:activity";
+ | "dev:activity"
+/** Robinhood Chain developer buys / sells only (never transfers), PRO+, projected per tier like dev:activity. */
+ | "rhc:dev_activity";
 export interface WebhookFilters {
     min_sol?: number;
     action?: "buy" | "sell";
@@ -580,7 +582,10 @@ export interface WebhookFilters {
     /** dev:activity only. */
     types?: Array<"dev_sell" | "dev_buy" | "dev_token_transfer_out" | "dev_token_transfer_in">;
     token_mints?: string[];
+    /** dev:activity (base58) and rhc:dev_activity (0x, case-insensitive): deployer_wallet or actor_wallet. */
     deployers?: string[];
+    /** rhc:dev_activity only: 0x token addresses. */
+    addresses?: string[];
     /** ULTRA/BUSINESS custom conditions (max 10). */
     conditions?: WebhookCondition[];
 }
@@ -1249,6 +1254,18 @@ export interface TokenCapTableResponse {
     summary: CapTableSummary;
     /** v1.23.4 — trade-coverage disclosure (keyed route; absent on the x402 mirror and older cached responses). */
     coverage?: TradeCoverage;
+    /** 2026-10 — whether early-buyer ranks 1..20 can be trusted (a recorded ingest gap overlapping launch→last ranked buy means a true early buyer may be missing). Absent on older responses. */
+    ranks_completeness?: {
+        ranks_complete: "observed_from_launch" | "gap_overlap" | "not_verified" | "no_ranks";
+        rank_basis: "first_persisted_buys_at_or_above_floor";
+        window: {
+            from: string;
+            to: string;
+        } | null;
+        gaps_overlapping: number;
+        open_slots: number;
+        gaps_in_open_slots: number;
+    };
 }
 export interface TokenBuyerQualityResponse {
     mint: string;
@@ -1577,6 +1594,10 @@ export interface BundleSummary {
     buy_volume: number;
     /** Swap-derived net position (proxy for on-chain balance). */
     tokens_held: number;
+    /** 2026-10 (COV-23) — `swap_only` = token transfers are not applied: a member that transferred tokens out and sold elsewhere still reads as holding. Absent on older responses. */
+    holdings_basis?: "swap_only" | "swap_and_transfers";
+    /** 2026-10 (COV-23) — how cohort membership is decided today: ≥3 wallets buying in one ingest batch with the same block_time second (not the same slot). Absent on older responses. */
+    bundle_detection?: "same_batch_block_time_second";
 }
 /**
  * One wallet in the bundle cohort. `rank`…`is_kol` are returned on PRO (top-10)
@@ -1641,15 +1662,37 @@ export interface CopyTradeSubscription {
     created_at: string;
     updated_at?: string;
     /**
-     * Source wallets that are tracked KOL wallets (can produce signals), read at
-     * response time. `null` when the tracking lookup failed (see `warnings`).
+     * Source wallets that are tracked KOL wallets, read at response time. Under
+     * `source_admission: "any_wallet"` (production since 2026-10-04) this is KOL
+     * enrichment only; under the legacy `"kol_only"` engine only these produce signals.
+     * @deprecated 2026-10-04, kept and still filled. `null` when the tracking lookup failed (see `warnings`).
      * Returned by servers from 2026-09-25 on; absent on older ones.
      */
     source_wallets_tracked?: string[] | null;
-    /** Source wallets that are NOT tracked KOL wallets: they never produce a signal. */
+    /**
+     * Source wallets that are NOT tracked KOL wallets. Under
+     * `source_admission: "any_wallet"` they fire like any other wallet (no
+     * Wallet Tracker entry or quota needed); under the legacy `"kol_only"` engine
+     * they never produce a signal.
+     * @deprecated 2026-10-04 — KOL membership is enrichment only; kept and still filled.
+     */
     source_wallets_untracked?: string[] | null;
-    /** Present when at least one wallet is untracked, or tracking could not be determined. */
+    /** Present when at least one wallet is untracked (legacy kol_only only), or tracking could not be determined. */
     warnings?: CopyTradeRuleWarning[];
+    /**
+     * Whether the rule can fire right now, separate from `is_active`. Legacy
+     * `kol_only`: `eligible` | `no_tracked_sources` | `unknown`. Server
+     * 2026-10-04 `any_wallet`: `eligible`, or an infrastructure state —
+     * `monitoring_pending` (rule changed after the engine's last load, live
+     * within seconds), `monitoring_unavailable` (engine / trade stream not
+     * reporting; it fires nothing then, see `monitoring_reasons`),
+     * `source_capacity_unavailable`.
+     */
+    operational_state?: "eligible" | "monitoring_pending" | "monitoring_unavailable" | "source_capacity_unavailable" | "no_tracked_sources" | "unknown";
+    /** Server 2026-10-04 — which trades the RUNNING engine admits. Absent = unknown (legacy kol_only semantics). */
+    source_admission?: "kol_only" | "any_wallet";
+    /** Server 2026-10-04 — present only with `monitoring_unavailable`: e.g. `trade_stream_stale`, `source_producer_stale`, `map_stale`, `engine_state_stale`. */
+    monitoring_reasons?: string[];
 }
 /** A non-fatal note on a copy-trade rule. The rule is saved unchanged. */
 export interface CopyTradeRuleWarning {
@@ -1661,9 +1704,10 @@ export interface CopyTradeRuleWarning {
  *
  * `source_wallets`: the per-rule limit is set by your tier and enforced by the
  * server (Pro 5, Ultra 50, Business and Enterprise 250; `GET /me` reports
- * yours as `copytrade_wallets_per_rule`). Signals fire only for trades by
- * wallets MadeOnSol tracks as KOLs (`GET /kol/wallets`). Any valid Solana
- * address is accepted into a rule, but an untracked wallet never produces a signal.
+ * yours as `copytrade_wallets_per_rule`). Any valid Solana wallet can be a
+ * source, KOL or not (`source_admission: "any_wallet"`, production since
+ * 2026-10-04; no Wallet Tracker quota used). On a server still running the
+ * legacy `"kol_only"` engine only tracked KOL wallets (`GET /kol/wallets`) fire.
  */
 export interface CopyTradeCreateParams {
     name?: string;
@@ -1744,6 +1788,14 @@ export interface CopyTradeSignal extends McDeltaFields {
     market_cap_usd?: number | null;
     /** v1.5 — current last-trade price (USD). */
     last_price_usd?: number | null;
+    /** Present once copy-trade identity v2 is active: the independent action this signal copies (null on identity_version 1 rows). Dedupe on id or economic_action_id, never on tx_signature. */
+    economic_action_id?: string | null;
+    /** Present once copy-trade identity v2 is active: the followed wallet that performed the action. */
+    source_actor?: string | null;
+    /** Present once copy-trade identity v2 is active: other followed wallets in the same action. */
+    co_actors?: string[];
+    /** Present once copy-trade identity v2 is active: 1 = per (rule, tx), 2 = per (rule, economic action). */
+    identity_version?: 1 | 2;
 }
 export interface CopyTradeSignalsParams {
     subscription_id?: number;
@@ -1755,6 +1807,22 @@ export interface CopyTradeSignalsParams {
     min_mc_usd?: number;
     /** Keep signals whose source trade's market cap (USD) was at most this. Drops unknown-MC signals. */
     max_mc_usd?: number;
+    /** `next_cursor` from the previous page — opaque strict (fired_at, id) keyset. The MC band is applied before limit and cursor. */
+    cursor?: string;
+}
+export interface CopyTradeSignalsResponse {
+    signals: CopyTradeSignal[];
+    /** Pass as `cursor` for the next (older) page; null at the end. */
+    next_cursor?: string | null;
+    /** false only when your signals ran out. */
+    has_more?: boolean;
+    /** Present with min_mc_usd / max_mc_usd; scan_truncated=true means more matches MAY exist past next_cursor. */
+    scan?: {
+        post_filtered: boolean;
+        scanned: number;
+        scan_truncated: boolean;
+        scan_budget: number;
+    };
 }
 export interface WalletTrackerEntry {
     wallet_address: string;
@@ -2402,6 +2470,15 @@ export interface TokenSummary {
     /** v1.24 — VERIFIED LP evidence only; null = unknown (every token today). Was a supply-burn proxy before. */
     lp_burned?: boolean | null;
     lp_burn_status?: LpBurnStatus;
+    /**
+     * D-22 — burned + non-cancelable LOCKED share of the LP (0–100), from LP
+     * evidence; null = unknown (never 0 for unknown). `lp_burnt_pct` stays burn-only.
+     */
+    lp_secured_pct?: number | null;
+    /** permanent = burn and/or permanent locks only; temporary = only time-limited locks; mixed = both; null = nothing secured or unknown. */
+    lp_secured_basis?: "permanent" | "temporary" | "mixed" | null;
+    /** Earliest end of a counted TEMPORARY LP lock (ISO); null when none. Permanent locks have no date. */
+    lp_locked_until?: string | null;
     token_supply_burn_detected?: boolean | null;
 }
 export interface TokensListResponse {
@@ -2463,6 +2540,8 @@ export interface AlmostBondedToken {
     name: string | null;
     /** Launch venue: pump.fun curve or bonk/LetsBonk (Raydium LaunchLab). */
     launchpad?: "pumpfun" | "launchlab";
+    /** 2026-10 — where `launchpad` came from: `primary_dex`, or the token's single curve pool in `token_pools` when primary_dex is unset. */
+    venue_source?: "primary_dex" | "token_pools";
     /** Bonding-curve progress %, from on-chain real_token_reserves depletion. */
     progress_pct: number | null;
     /** Δprogress per minute; null until a 5m-ago snapshot exists. */
@@ -2553,6 +2632,13 @@ export interface WalletClassification {
     kol_name: string | null;
     bot_confidence: "low" | "medium" | "high" | "none" | null;
     dump_cluster: DumpClusterStats | null;
+    /** 2026-10 (COV-25) — whether each flag's rule actually evaluated this wallet. evaluated=false → the boolean is "no evidence", not "verified clean". */
+    label_coverage?: Record<"sniper" | "bundler" | "dumper" | "kol", LabelCoverageEntry>;
+}
+export type LabelCoverageReason = "flagged" | "rule_evaluated" | "insufficient_sample" | "not_checked_budget" | "sample_unavailable" | "population_not_checked" | "no_cohort_stats" | "registry";
+export interface LabelCoverageEntry {
+    evaluated: boolean;
+    reason: LabelCoverageReason;
 }
 export interface WalletBatchClassifyResponse {
     /** Launch-pipeline scope disclosure (absent ≠ clean). */
@@ -2560,6 +2646,15 @@ export interface WalletBatchClassifyResponse {
     wallets: WalletClassification[];
     count: number;
     as_of: string;
+    /** 2026-10 (COV-25) — label rule version, e.g. `wallet-labels/368-v1`. */
+    rule_version?: string;
+    /** 2026-10 (COV-25) — one sentence per label: population + window. */
+    evidence_horizon?: {
+        sniper: string;
+        bundler: string;
+        dumper: string;
+        kol: string;
+    };
 }
 export interface WalletTopToken {
     token_mint: string;
@@ -2682,6 +2777,40 @@ export interface WalletOpenPosition {
     unrealized_pct: number | null;
     first_buy_at: string | null;
     buys_in_position: number;
+    /** 2026-10 (COV-21) — positions are FIFO-open DEX buys (trade position), not a proven holding. */
+    position_basis?: "swap_derived";
+    holding_status?: "verified" | "unverified";
+    holding_unverified_reason?: "not_checked" | "no_fresh_snapshot" | "snapshot_unreadable" | "snapshot_older_than_trades" | "decimals_mismatch" | "balance_invalid" | null;
+    /** partial = a verified balance exceeds the trade position; the excess arrived without a swap and has no cost basis. */
+    cost_basis_status?: "known" | "partial";
+    /** Present (non-null) only when holding_status = verified. */
+    holding?: WalletPositionHolding | null;
+}
+/** 2026-10 (COV-21) — proven on-chain holding for one swap-derived position. */
+export interface WalletPositionHolding {
+    status: "HELD" | "PARTIALLY_REDUCED" | "TRANSFERRED_OR_DISPOSED" | "EXTERNAL_INFLOW";
+    onchain_balance: number;
+    held_known_amount: number;
+    external_inflow_amount: number;
+    cost_basis_held_sol: number;
+    unrealized_known_sol: number | null;
+    /** Cost of FIFO lots no longer in the wallet. Outcome unknown: neither realized nor unrealized. */
+    cost_basis_not_held_sol: number;
+    verified_at: string;
+    source: "wallet_holdings_cache";
+}
+/** 2026-10 (COV-21) — summary of the proven-holding check over the returned open positions. */
+export interface WalletHoldingCheck {
+    mode: "off" | "cache";
+    source: "wallet_holdings_cache" | null;
+    verified_at: string | null;
+    verified: number;
+    unverified: number;
+    held: number;
+    partially_reduced: number;
+    transferred_or_disposed: number;
+    external_inflow: number;
+    note: string;
 }
 export interface WalletPnlResponse {
     address: string;
@@ -2698,8 +2827,14 @@ export interface WalletPnlResponse {
         trades_through_same_second?: number;
         partial?: true;
         analyzed_trades?: number;
-        partial_reason?: string;
+        partial_reason?: string; /** 2026-10 (COV-21) — tokens with sells beyond in-window buys; excluded from realized PnL. */
+        sells_without_cost_basis?: {
+            tokens: number;
+            cost_basis: "unknown";
+        };
     };
+    /** 2026-10 (COV-21) — proven-holding check summary. Absent on older responses. */
+    holding_check?: WalletHoldingCheck;
     cache_hit?: boolean;
     computed_at?: string;
     ttl_seconds?: number;
@@ -2713,6 +2848,8 @@ export interface WalletPnlResponse {
 export interface WalletPositionsResponse {
     address: string;
     positions: WalletOpenPosition[];
+    /** 2026-10 (COV-21) — proven-holding check summary. Absent on older responses. */
+    holding_check?: WalletHoldingCheck;
     cache_hit?: boolean;
     computed_at?: string | null;
     ttl_seconds?: number | null;
@@ -3032,18 +3169,24 @@ export interface TokenDepthParams {
 export interface TokenDepthQuote {
     /** The requested buy size, in SOL. */
     size_sol: number;
-    /** Tokens received for that buy (UI units, fee-adjusted). */
-    tokens_out: number;
+    /**
+     * Concentrated depth models only (server flag): "filled" | "pool_liquidity_exhausted"
+     * (partial fill reported) | "exceeds_loaded_bins" | "price_out_of_range" (numbers null).
+     */
+    status?: "filled" | "pool_liquidity_exhausted" | "exceeds_loaded_bins" | "exceeds_loaded_ticks" | "price_out_of_range";
+    /** Tokens received for that buy (UI units, fee-adjusted). null only on a concentrated pool whose status is not quotable. */
+    tokens_out: number | null;
     /** Average execution price in SOL per token. */
-    avg_price_sol: number;
+    avg_price_sol: number | null;
     /** Post-trade spot-price move, % (rounded to 2 decimals). */
-    price_impact_pct: number;
+    price_impact_pct: number | null;
 }
 /** SOL required to move the pool's spot price by 1% / 5% / 10%. */
 export interface TokenDepthToMovePrice {
-    "1pct": number;
-    "5pct": number;
-    "10pct": number;
+    /** null on a concentrated pool when the loaded window does not reach that price. */
+    "1pct": number | null;
+    "5pct": number | null;
+    "10pct": number | null;
 }
 /** Fields shared by supported and unsupported depth pools. */
 export interface TokenDepthPoolBase {
@@ -3062,9 +3205,28 @@ export interface TokenDepthPoolBase {
  *  `reserves_age_ms` since the last swap). */
 export interface TokenDepthPool extends TokenDepthPoolBase {
     depth_available: true;
+    /** "constant_product" | "curve" | "concentrated" (the last only with a concentrated depth model enabled). */
     model: string;
+    /** Concentrated pools only: the program-exact model that produced the numbers. */
+    model_detail?: "meteora_dlmm_bins" | "raydium_clmm_ticks" | "meteora_damm_v2_full_range";
+    /** Meteora DAMM v2 only: the proven Pool account (pool_address is the vault). */
+    pool_account?: string;
     /** Swap fee, % (e.g. 0.25). */
     fee_pct: number;
+    /** "observed_event" (PumpSwap virtual-reserve model) | "dynamic_fee_at_quote_time" (Meteora DLMM base + variable fee). Absent = static venue fee. */
+    fee_basis?: "observed_event" | "dynamic_fee_at_quote_time" | "amm_config_at_quote_time";
+    /** Meteora DLMM only: the loaded bin range and its slot; quotes never walk outside it. */
+    bins_window?: {
+        from_bin: number;
+        to_bin: number;
+        slot: number;
+    };
+    /** Raydium CLMM only: the loaded tick range [from_tick, to_tick) in the buy direction and its slot. */
+    ticks_window?: {
+        from_tick: number;
+        to_tick: number;
+        slot: number;
+    };
     source: "stream" | "live_rpc";
     /** Age of the reserves snapshot (0 for live_rpc). */
     reserves_age_ms: number;
@@ -3107,6 +3269,13 @@ export interface TokenDepthResponse {
         max_pools: number;
         evaluated: number;
         truncated: boolean;
+    };
+    /** Only with a concentrated depth model enabled: largest known pool vs the reported pool; routing is single-pool only. */
+    pool_selection?: {
+        largest_known_pool: string;
+        largest_known_pool_supported: boolean;
+        primary_pool: string | null;
+        routing: "single_pool_only";
     };
 }
 /** Wallet-intelligence labels on a holder. Empty = unknown to us, NOT verified clean. */
@@ -3228,7 +3397,10 @@ export interface TokenHoldersResponse {
     };
 }
 /** Locker program a contract lives under. LP locks are NOT covered (token / vesting locks only). */
-export type TokenLockProgram = "streamflow" | "jupiter_lock" | "bonfida_vesting";
+/** smithii_vesting / sablier_lockup are served only while listed in the response's meta.programs (verified admission). */
+export type TokenLockProgram = "streamflow" | "jupiter_lock" | "bonfida_vesting" | "smithii_vesting" | "sablier_lockup";
+/** sablier_lockup only: `current` = recipient proven by the latest read; anything else = recipient null (unknown / burned). */
+export type TokenLockHolderStatus = "current" | "lost_proof" | "never_proven" | "burned" | "anomaly";
 /** `lock` = whole amount released at one date; `vesting` = cliff and/or periodic release. */
 export type TokenLockKind = "lock" | "vesting";
 /** Contract status, derived at request time from the on-chain schedule + withdrawn/cancelled state. */
@@ -3297,7 +3469,14 @@ export interface TokenLock {
     mint: string;
     /** Creator / locker. Bonfida has none on-chain. */
     sender: string | null;
+    /** sablier_lockup: the CURRENT proven stream-NFT holder only, null otherwise (see holder_status). smithii_vesting: null for merkle receivers. */
     recipient: string | null;
+    /** sablier_lockup only (null for other programs). */
+    holder_status: TokenLockHolderStatus | null;
+    /** sablier_lockup only: last holder a read proved — provenance, NOT the recipient unless holder_status is current. */
+    last_proven_holder: string | null;
+    /** sablier_lockup only: slot of the read that last proved last_proven_holder. */
+    holder_proven_at_slot: number | null;
     name: string | null;
     /** Deposited amount. */
     amount_raw: string;
@@ -3314,11 +3493,13 @@ export interface TokenLock {
     locked_pct_of_supply: number | null;
     unlocked_raw: string;
     unlocked: number | null;
-    /** Claimed so far, read from the contract's own state (Solana tracks withdrawals). */
-    withdrawn_raw: string;
+    /** Claimed so far, read from the contract's own state; null when the program does not expose it (withdrawn_tracked false: smithii_vesting). */
+    withdrawn_raw: string | null;
     withdrawn: number | null;
-    /** Unlocked but not yet withdrawn. */
-    claimable_raw: string;
+    /** false = withdrawn / claimable are unknown (null), not zero. */
+    withdrawn_tracked: boolean;
+    /** Unlocked but not yet withdrawn; null when withdrawn is not tracked. */
+    claimable_raw: string | null;
     claimable: number | null;
     start_at: string | null;
     cliff_at: string | null;
@@ -4556,11 +4737,20 @@ export interface DeployerActivityFamilyCoverage {
     boundary_known: boolean;
     /** Set when the family was not queried because it cannot apply (a wallet with no attributed launch has no dev trades). */
     skipped_reason?: "no_attributed_launch";
+    /** dev_trades only, only while archive reads are enabled and the window reaches below the online boundary. */
+    archive?: {
+        read: "ok" | "not_needed" | "failed";
+        served: boolean;
+        reason: DeployerActivityArchiveReason | null;
+        missing_months: string[];
+        months_read: string[];
+    };
 }
 export interface DeployerActivityRange {
     from: string | null;
     to: string | null;
 }
+export type DeployerActivityArchiveReason = "archive_unavailable" | "archive_timeout" | "archive_contract_mismatch" | "archive_ledger_unavailable" | "archive_months_missing";
 /** Requested vs online vs archive-only history (archive reads are a planned follow-up). */
 export interface DeployerActivityHistoryPlan {
     requested: DeployerActivityRange & {
@@ -4575,7 +4765,8 @@ export interface DeployerActivityHistoryPlan {
     };
     archive_only: (DeployerActivityRange & {
         served: boolean;
-        reason: "archive_reads_not_enabled";
+        reason: "archive_reads_not_enabled" | DeployerActivityArchiveReason | null;
+        missing_months?: string[];
     }) | null;
 }
 /**
@@ -4616,12 +4807,66 @@ export interface DeployerActivityResponse {
         future_events_dropped: number;
         note: string;
     };
-    /** ULTRA/BUSINESS only, absent on PRO. Currently always not_available. */
-    identity?: {
-        status: "not_available";
-        reason: "identity_stitching_not_released";
-        note: string;
+    /**
+     * ULTRA/BUSINESS only, absent on PRO. Currently always not_available with
+     * reason identity_stitching_not_released. When released: read from the
+     * offline identity graph, `not_available` with another reason whenever the
+     * graph is stale or fails a consistency check. Never means "operates alone".
+     */
+    identity?: DeployerActivityIdentityUnavailable | DeployerActivityIdentity;
+}
+export interface DeployerActivityIdentityUnavailable {
+    status: "not_available";
+    reason: "identity_stitching_not_released" | "builder_never_ran" | "builder_stale" | "builder_rule_mismatch" | "builder_gate_failed" | "identity_not_active" | "identity_inconsistent" | "evidence_missing" | "member_excluded" | "identity_lookup_failed";
+    note: string;
+}
+export interface DeployerActivityIdentityMember {
+    wallet: string;
+    role: string;
+    confidence: "confirmed" | "strong" | "probable";
+    path_len: number;
+    best_evidence_class: string | null;
+    evidence_count: number;
+    is_anchor: boolean;
+}
+export interface DeployerActivityIdentity {
+    status: "linked" | "no_strong_evidence";
+    scope: "builder_one_hop";
+    rule_version: string;
+    identity_id: string | null;
+    /** members + 1 (the asked wallet). */
+    wallet_count: number;
+    anchor: string | null;
+    self: Omit<DeployerActivityIdentityMember, "wallet"> | null;
+    members: DeployerActivityIdentityMember[];
+    related: Array<{
+        wallet: string;
+        evidence_class: string;
+        strength: "context";
+        basis: string;
+    }>;
+    evidence: Array<{
+        wallet_a: string;
+        wallet_b: string;
+        evidence_class: string;
+        direction: "a_to_b" | "symmetric";
+        observed_at: string;
+        time_basis: "chain" | "ingest" | "chain_or_ingest";
+        tx_ids: string[];
+        token_mint: string | null;
+        strength: "confirmed" | "strong" | "probable" | "context";
+        basis: string;
+        rule_version: string;
+    }>;
+    builder: {
+        run_id: number;
+        built_at: string;
+        age_seconds: number;
+        stale_after_seconds: number;
+        hub_floor: number | null;
     };
+    disclaimer: string;
+    coverage_note: string;
 }
 export interface DeployerActivityParams {
     /** Clamped server-side to 100 (PRO, ULTRA) or 500 (BUSINESS). */

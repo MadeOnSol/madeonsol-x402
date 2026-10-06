@@ -94,8 +94,8 @@ import type {
   CopyTradeUpdateParams,
   CopyTradeUpdateResponse,
   CopyTradeRuleWarning,
-  CopyTradeSignal,
   CopyTradeSignalsParams,
+  CopyTradeSignalsResponse,
   CoordinationAlertRule,
   CoordinationAlertCreateParams,
   CoordinationAlertUpdateParams,
@@ -419,6 +419,7 @@ export type {
   CopyTradeRuleWarning,
   CopyTradeSignal,
   CopyTradeSignalsParams,
+  CopyTradeSignalsResponse,
   CoordinationDeliveryMode,
   CoordinationAlertRule,
   CoordinationAlertCreateParams,
@@ -1774,7 +1775,7 @@ export class MadeOnSolREST {
   }
 
   /** Recent fired copy-trade signals (up to 7 days). */
-  async copyTradeSignals(params?: CopyTradeSignalsParams): Promise<{ signals: CopyTradeSignal[] }> {
+  async copyTradeSignals(params?: CopyTradeSignalsParams): Promise<CopyTradeSignalsResponse> {
     return this.request("GET", "/copytrade/signals", undefined, params as Record<string, string | number | undefined>);
   }
 
