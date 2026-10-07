@@ -41,7 +41,6 @@ async function resolveWebSocket(override) {
         return g;
     throw new Error("No WebSocket implementation available. On Node < 22, install `ws` (npm i ws) or pass { WebSocketImpl }.");
 }
-const CONNECTING = 0;
 const OPEN = 1;
 const HELD_LIVE_CAP = 10_000;
 const DEFAULT_SUB_ID = "default";
@@ -332,8 +331,7 @@ export class MadeOnSolStream {
     }
     /** Open the connection (also called implicitly by subscribe). Restarts a stream that went `"fatal"`. */
     async connect() {
-        // A socket that is still CONNECTING is the connection; opening another would orphan it.
-        if (this.connecting || (this.ws && (this.ws.readyState === CONNECTING || this.ws.readyState === OPEN)))
+        if (this.connecting || (this.ws && this.ws.readyState === OPEN))
             return;
         if (this.stopped) {
             this.stopped = false;

@@ -699,6 +699,14 @@ export interface StreamToken {
   /** Human-readable lifetime statement ("This token does not expire. …"). */
   lifetime?: string;
   ws_url: string;
+  /** Present only for activated ShredPrism and ULTRA/BUSINESS/ENTERPRISE. */
+  early_ws_url?: string;
+  early_stream?: {
+    channels: "early:deploys"[];
+    subscribe_example: { type: "subscribe"; channels: "early:deploys"[] };
+    execution_status: "unknown";
+    note: string;
+  };
   /** DEX trade stream URL — only present for Ultra tier subscribers */
   dex_ws_url?: string;
   /** Human-readable connect instructions. */
@@ -3231,24 +3239,41 @@ export interface TokenTopTradersResponse {
   coverage?: TradeCoverage;
 }
 
-/* ── Deshred sniper feed (v1.21) ── */
+/* ── ULTRA+ early sniper observations ── */
 
 export interface SniperRecentParams {
   /** Only deploys detected after this ISO-8601 timestamp. */
   since?:         string;
-  /** Filter by deployer reputation tier (keyed ULTRA; PRO and x402 payers see elite/good). */
+  /** Filter by deployer reputation tier (ULTRA/BUSINESS/ENTERPRISE). */
   deployer_tier?: "elite" | "good" | "moderate" | "rising" | "cold" | "unranked";
   /** Minimum deployer lifetime bond rate (0–1). */
   min_bond_rate?: number;
   /** Max results, 1–200 (default 50). */
   limit?:         number;
-  /** REST only, ULTRA: narrow to your custom deployer watchlist. The x402 route rejects it before payment (400 param_not_supported_on_x402). */
+  /** Keyed ULTRA/BUSINESS/ENTERPRISE: narrow to your custom deployer watchlist. Keyless sniper access is retired. */
   watchlist?:     boolean;
 }
 
-/** One deshred-detected pump.fun deploy — surfaces ~500ms before on-chain
- *  confirmation, so the payload carries no MC/logs/balances. */
+/** Encoded v1 requests. Missing bits are null, not zero; these are not execution measurements. */
+export interface EarlyTransactionConfig {
+  config_mask: number;
+  priority_fee_lamports: string | null;
+  compute_unit_limit: number | null;
+  loaded_accounts_data_size_limit: number | null;
+  heap_size: number | null;
+}
+
+/** Early instruction observation. Execution is unknown until separately resolved.
+ *  No guaranteed timing lead. Deduplicate by event_id, never by mint alone. */
 export interface SniperDeploy {
+  event_id?: string;
+  source?: "shredprism" | "deshred";
+  outer_instruction_index?: number | null;
+  observation_stage?: "observed";
+  execution_status?: "unknown" | "succeeded" | "failed" | "unresolved";
+  transaction_version?: "legacy" | 0 | 1 | null;
+  transaction_config?: EarlyTransactionConfig | null;
+  fee_payer?: string | null;
   mint:                     string;
   name:                     string | null;
   symbol:                   string | null;
@@ -3259,7 +3284,7 @@ export interface SniperDeploy {
   detection_region:         string;
   detection_confirmed:      boolean;
   /** Deployer attribution: 'unverified' | 'confirmed' | 'corrected' (mig 313). */
-  attribution_status?:      string | null;
+  attribution_status?:      "unverified" | "confirmed" | "corrected" | null;
   attribution_checked_at?:  string | null;
   deployer_tier:            string | null;
   deployer_bond_rate:       number | null;
@@ -3272,6 +3297,13 @@ export interface SniperDeploy {
   /** v1.21 — slot-window snipe rollup (slots [-1..+3]). Null until the ~10-min
    *  settle window has passed — absent, not zero. */
   footprint?:               SniperFootprint | null;
+}
+
+export interface SniperByDeployerResponse {
+  coverage?: LaunchCoverage;
+  deployer: string;
+  deploys: SniperDeploy[];
+  count: number;
 }
 
 export interface SniperRecentResponse {
@@ -4938,6 +4970,14 @@ export interface DeployerActivityEvent {
   transfer_count?: number;
   sample_tx_ids?:  string[];
   first_tx?:   string | null;
+  /** Developer token transfers: number of counterparties of this (tx, mint, direction, actor) aggregate; null on rows stored before 2026-10-06. */
+  counterparty_count?: number | null;
+  /** Developer token transfers: true when re-derived from the chain after a delivery gap (never delivered live); `at` is then chain time. */
+  recovered?:  boolean;
+  /** With `recovered: true`: when the recovery stored the event. */
+  recovered_at?: string | null;
+  /** Developer token transfers: true when classified after a short creator lookup; `at` stays the receive time. */
+  late_classified?: boolean;
 }
 
 export interface DeployerActivityFamilyCoverage {

@@ -1,5 +1,8 @@
 # madeonsol-x402
 
+> **Unreleased ShredPrism migration (PR #420):** sniper becomes ULTRA/BUSINESS/ENTERPRISE API-key only. The keyless sniper route returns HTTP 410 without a new payment. Early observations are not proof of execution. The changes below describe the release candidate; package publication and source activation are still pending. Historical release notes describe earlier behavior.
+
+
 [![npm version](https://img.shields.io/npm/v/madeonsol-x402?style=flat-square)](https://www.npmjs.com/package/madeonsol-x402)
 [![npm downloads](https://img.shields.io/npm/dm/madeonsol-x402?style=flat-square)](https://www.npmjs.com/package/madeonsol-x402)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4+-blue?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -16,6 +19,8 @@ TypeScript SDK for the [MadeOnSol](https://madeonsol.com) Solana KOL intelligenc
 > **Server update 2026-10-05 (no package change needed): realtime developer activity and USDC/USDT trade sizing.** The webhook event `dev:activity` (PRO+) and, on the Ultra DEX firehose socket, `dev_subscribe` → `dev:activity` + `dev:activity_enrichment` (same `id`) now deliver a token developer's `dev_sell`, `dev_buy`, `dev_token_transfer_out` and `dev_token_transfer_in` as they happen (a transfer is never a sell; PRO gets the developer's own events without identity fields; transfer coverage is partial, see `transfer_watch_coverage`). On `dex:trades`, a swap paid in USDC or USDT now carries `sol_amount` = the SOL equivalent of its stable leg (used by `dust`, `min_sol`, `max_sol`) plus the additive fields `sol_amount_basis` (`native_sol` | `stable_quote_equivalent` | `stable_quote_unconverted`) and `stable_quote`; `stable_quote_unconverted` means `sol_amount` 0 (size unknown). Details: [changelog](https://madeonsol.com/changelog).
 
 > **Server update 2026-10-04 (no package change needed): copy-trade rules follow any valid source wallet.** `source_wallets` no longer have to be tracked KOL wallets: any valid Solana wallet fires, KOL membership is optional enrichment, and copy-trade sources do not use Wallet Tracker quota. Each rule reports `source_admission` (`any_wallet`) and `operational_state` (`eligible`, or an infrastructure state `monitoring_pending` / `monitoring_unavailable` / `source_capacity_unavailable`). `source_wallets_tracked` / `source_wallets_untracked` and the `untracked_source_wallets` warning are legacy fields, still filled. This supersedes the "signals fire only for tracked KOL wallets" wording in older notes below. Limits are unchanged: PRO 3 rules × 5 wallets, ULTRA 20 × 50, BUSINESS 100 × 250.
+
+> **New in 4.0.0: sniper is ULTRA+ only and no longer keyless (breaking).** `sniperRecent()` in keyless (x402) mode now throws `KeylessNotAvailableError` before any request or payment: the server retired `/api/x402/sniper/recent` on 2026-10-06 (HTTP 410 `x402_endpoint_retired`, nothing charged). With an ULTRA, BUSINESS or ENTERPRISE API key `sniperRecent()` / `sniperByDeployer()` work as before (PRO keys now get 403 `tier_required`). Types: `SniperDeploy` gains the early-observation fields (`event_id`, `source` shredprism | deshred, `outer_instruction_index`, `observation_stage`, `execution_status`, `transaction_version`, `transaction_config`, `fee_payer`), `sniperByDeployer()` returns the typed `SniperByDeployerResponse`, `attribution_status` is the closed set unverified | confirmed | corrected, and `StreamToken` gains `early_ws_url` / `early_stream` (ULTRA+ only, present while the early stream is active). Observations are intent, not execution proof.
 
 > **New in 2.9.0: token lock provenance.** Typed: Token lock rows carry `provider` (`identity` verified | compatible | unverified; `lock_url` always null on Solana, never constructed), `explorer` (Solana Explorer links), `price_usd`, `seconds_until_end`, `seconds_until_next_unlock` and, for Bonfida, the tranche `schedule` (server 2026-10-02). Additive only.
 
@@ -199,9 +204,9 @@ A new client or process starts a new allowance. These limits are not a durable, 
 | `almostBonded(params?)` | **New 1.21** · Launchpad tokens approaching graduation (pump.fun + LetsBonk LaunchLab) — bonding progress, velocity (Δprogress/min), ETA, deployer tier. **$0.01** |
 | `tokenTopTraders(mint, params?)` | **New 1.21** · Wallets ranked by realized PnL (or ROI) on a token, enriched with KOL identity + alpha reputation. **$0.02** |
 | `tokenCapTable(mint)` | **New 1.21** · Early-buyer cap table — first 10 non-deployer buyers with PnL, exit status, bundle/KOL/alpha flags + buyer-quality score. **$0.02** |
-| `sniperRecent(params?)` | **New 1.21** · Deshred sniper deploy feed (elite/good deployers) with per-deploy snipe `footprint`. **$0.01** |
+| `sniperRecent(params?)` | Retired in keyless mode; raises `KeylessNotAvailableError` before the request. Use an ULTRA/BUSINESS/ENTERPRISE API key. |
 | `deployerTrajectory(wallet, params?)` | **New 1.21** · Deployer bond-rate trajectory — streaks, rolling bond rates, trend, cadence. `include: "daily_snapshots"` adds 90 days. **$0.01** |
-| `discovery()` | Lists all 25 endpoints, prices, and parameter docs (free) |
+| `discovery()` | Lists the current keyless endpoints, prices, and parameter docs (free) |
 
 **API key only (not on the x402 rail):** `scoutLeaderboard()`, `coordinationHistory()`, `kolConsensus()`, `peakHistory()` and `tokenBundle()` have no keyless x402 route (the server answers 404). With an API key they call `/api/v1/` as before; in private-key (x402) mode they throw `KeylessNotAvailableError` before any request or payment. The list is exported as `X402_UNAVAILABLE_PATHS`. `discovery()` returns the live x402 catalog.
 
@@ -253,7 +258,7 @@ Scored from 1.5M+ early-buyer records (wallets seen in the first 20 buyers of Pu
 | `rest.tokenCandles(mint, params?)` | PRO+ | OHLC candles. PRO = OHLCV, last 30 days; ULTRA = + net flow (buy/sell volume, `net_volume_usd`, counts, MEV vol), liquidity delta, full history |
 | `rest.tokenTrades(mint, params?)` | PRO+ | **New 1.21** · Mint-scoped trade tape — cursor-paginated raw trades (`price_sol`/`price_usd`, `early_buyer_rank`, `slot`), filter by `action`/`wallet`/`since`/`until`. Default window = **full history**; `coverage` block carries `history_start` (2026-04-12) + `scope` (pump.fun pipeline) |
 | `rest.tokenTopTraders(mint, params?)` | PRO+ | **New 1.21** · Wallets ranked by realized PnL (or ROI) on a token — `sort` ("pnl" \| "roi"), `window_days` (1–180), `min_bought_sol`; enriched with KOL identity + alpha reputation (`bot_confidence`, historical win rate/PnL) |
-| `rest.sniperRecent(params?)` | PRO+ | **New 1.21** · Deshred sniper deploy feed — PRO sees elite/good deployers, ULTRA all tiers. Each deploy carries a slot-window snipe `footprint` (`buys`/`buyers`/`sol`/`supply_pct`/`sniper_wallet_buys`; null until the ~10-min settle window) |
+| `rest.sniperRecent(params?)` | ULTRA/BUSINESS/ENTERPRISE | Early deploy observations with action identity and separate execution status; unknown enrichment stays null. |
 
 **tokenCandles params** — `tf` ("1m" \| "5m" \| "15m" \| "1h" \| "4h" \| "1d", default "1h"), `limit` (1–1000, default 200), `from` (ISO 8601), `to` (ISO 8601)
 
@@ -637,3 +642,4 @@ Docs: [madeonsol.com/solana-api](https://madeonsol.com/solana-api)
 | MCP Server (Claude, Cursor) | [`mcp-server-madeonsol`](https://www.npmjs.com/package/mcp-server-madeonsol) · [Smithery](https://smithery.ai/servers/madeonsol/solana-kol-intelligence) · [Glama](https://glama.ai/mcp/servers/madeonsol/mcp-server-madeonsol) |
 | ElizaOS | [`@madeonsol/plugin-madeonsol`](https://www.npmjs.com/package/@madeonsol/plugin-madeonsol) |
 | Solana Agent Kit | [`solana-agent-kit-plugin-madeonsol`](https://www.npmjs.com/package/solana-agent-kit-plugin-madeonsol) |
+
