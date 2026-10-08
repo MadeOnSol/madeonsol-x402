@@ -1,6 +1,6 @@
 # madeonsol-x402
 
-> **Unreleased ShredPrism migration (PR #420):** sniper becomes ULTRA/BUSINESS/ENTERPRISE API-key only. The keyless sniper route returns HTTP 410 without a new payment. Early observations are not proof of execution. The changes below describe the release candidate; package publication and source activation are still pending. Historical release notes describe earlier behavior.
+> **New in 4.1.0: managed ShredPrism early-stream client (additive).** `MadeOnSolREST.earlyStream()` plus the `walletTrades()` / `followTokens()` subscription helpers connect to the separate ULTRA/BUSINESS/ENTERPRISE early gateway with the same stream token: reconnect with backoff, separate safe checkpoints per subscription, bounded process-local replay with deduplication, explicit gaps, optional `compact-v1` frames (expanded before your callback) and private saved wallet list controls (`manageWalletList()`). It only connects when `getStreamToken()` advertises `early_ws_url`, and only the channels listed in `early_stream.channels` are served; otherwise it stops with `early_stream_unavailable` or a server rejection. New types: `EarlyChannel`, `EarlyStreamFilters`, `EarlyAmountFilter`, `EarlySubscribeControl`, `EarlyUpdateControl`, `EarlyWalletList*`; `StreamToken.early_stream` gains the six channel names and `coverage`. Observations are provisional instruction intent, not executed fills; coverage is partial and replay is never durable history. Existing methods are unchanged.
 
 
 [![npm version](https://img.shields.io/npm/v/madeonsol-x402?style=flat-square)](https://www.npmjs.com/package/madeonsol-x402)
@@ -643,3 +643,163 @@ Docs: [madeonsol.com/solana-api](https://madeonsol.com/solana-api)
 | ElizaOS | [`@madeonsol/plugin-madeonsol`](https://www.npmjs.com/package/@madeonsol/plugin-madeonsol) |
 | Solana Agent Kit | [`solana-agent-kit-plugin-madeonsol`](https://www.npmjs.com/package/solana-agent-kit-plugin-madeonsol) |
 
+## Managed ShredPrism early-stream client (4.1.0+)
+
+`MadeOnSolREST.earlyStream()` extends this SDK with the separate early protocol.
+It requires ULTRA, BUSINESS or ENTERPRISE and an `early_ws_url` in `getStreamToken()`
+discovery; subscribe only to channels listed in `early_stream.channels`.
+The existing confirmed-stream `stream()` contract is unchanged.
+
+```js
+import { MadeOnSolREST, walletTrades, followTokens } from 'madeonsol-x402';
+const api = new MadeOnSolREST({ apiKey: process.env.MADEONSOL_API_KEY });
+const stream = api.earlyStream({
+  subscriptions: [
+    walletTrades(['YOUR_WALLET'], { sub_id: 'wallets', directions: ['buy'] }),
+    followTokens(['YOUR_MINT'], { sub_id: 'token' }),
+  ],
+  onFrame(frame) {
+    // early:observed is provisional instruction intent; early:outcome reports status.
+    // Correlate outcomes through frame.data.observed_event_id.
+    console.log(frame);
+  },
+  onStatus(status) {
+    if (['gap', 'fatal', 'reconnect'].includes(status.type)) console.error(status);
+  },
+});
+stream.connect();
+// Once subscriptions are ready (and any replay has completed), await each control:
+// await stream.updateSubscription('wallets', { filters: { wallets: ['NEW_WALLET'] } });
+// await stream.updateSubscription('wallets', { format: 'compact-v1' });
+// await stream.unsubscribe('token');
+// stream.close();
+```
+
+Replace placeholder addresses before running. The repository example is
+`packages/madeonsol-x402/examples/early-stream.mjs`: build the SDK, set
+`MADEONSOL_API_KEY` plus exactly one of `EARLY_WALLETS` or `EARLY_MINTS`, and run
+that file with Node 22+. It uses the platform WebSocket; `WebSocketImpl` can inject
+`ws`.
+
+- Token acquisition uses the existing REST client on every connection. Tokens
+  do not expire automatically; the SDK never schedules rotation. Browser-compatible
+  handshake authentication uses `?token=`, which must remain redacted in proxy logs.
+  Credentials and raw REST/transport errors are excluded from SDK diagnostics.
+- Transient disconnects retry with jittered exponential backoff (500 ms to 30 s;
+  10 consecutive reconnect attempts by default). Authorization closes have a
+  three-rejection budget. A connection-limit close waits at least 60 s. Policy
+  rejection stops. Token acquisition, handshake, controls and replay have 15 s
+  deadlines. There is no additional application heartbeat; the gateway's WS
+  ping/pong remains responsible for detecting an idle broken connection.
+- Up to 10 configured subscriptions share one connection; server tier/connection
+  caps still apply. Updates and unsubscribe require a connected client and one
+  control at a time. Await each call. The SDK replaces local settings only after
+  server acknowledgement. Omitted filters remain; `{}` clears them. Use `subscribe(control)` to add a new subscription after connecting. An empty
+  initial array is supported for list-management-only sessions.
+- Frames are handled in arrival order. Async `onFrame` handlers are awaited, and
+  an exception/rejection stops the client without advancing past that event.
+  The pending queue is bounded to 2,048 frames / 8 MiB, measured in UTF-8, by default.
+  Overflow stops with `client_queue_limit`; expensive work should leave the handler.
+  Closing invalidates pending work and cancels retry/replay/control timers.
+- `getCursors()` returns separate safe checkpoints per subscription. During replay,
+  new live traffic is delivered but cannot advance the checkpoint until a complete
+  replay finishes. A disconnect mid-replay resumes from the prior safe point.
+  Incomplete replay or a reported gap freezes the checkpoint. A later complete
+  recovery can resolve it; `acceptGap(subId)` explicitly skips to received progress
+  once replay ends if the caller accepts the missing range. No gap is silently
+  accepted. Process-local replay is bounded and is never durable history.
+- Persist cursors with their matching subscription settings outside the handler,
+  after processing has completed. To restart, put each saved cursor in that
+  subscription's `resume`. Recent IDs are deduplicated per subscription and event
+  type (10,000 IDs per subscription). Deduplication is bounded and in-memory:
+  downstream processing must tolerate duplicates after eviction/restart.
+- `full` remains the default. `compact-v1` is expanded before the application
+  callback. The local managed client costs more CPU than a minimal reader; no
+  zero-overhead or customer lead-time claim is made. Keep handlers short. Current
+  protocol coverage is partial and all observations remain provisional.
+
+Full wire contract: https://madeonsol.com/docs/shredprism-stream.md.
+
+
+## Private saved wallet lists
+
+The early gateway stores named lists separately from the confirmed wallet-tracker
+watchlist. Its authenticated stream-token owner is authoritative; a request cannot
+supply another user ID. These lists are never added to public KOL/alpha rosters and
+do not change upstream wallet-tracker subscriptions.
+
+On a connected SDK client (it may start with `subscriptions: []`):
+
+```js
+const created = await stream.manageWalletList({
+  op: 'create', name: 'My wallets', wallets: ['YOUR_WALLET'],
+});
+await stream.subscribe({
+  type: 'subscribe', sub_id: 'private-trades', channels: ['early:trades'],
+  wallet_list: created.list.id,
+});
+const changed = await stream.manageWalletList({
+  op: 'replace', id: created.list.id, revision: created.list.revision,
+  name: 'My wallets', wallets: ['ANOTHER_WALLET'],
+});
+// list returns metadata + wallet_count; get returns the actual wallet array.
+await stream.manageWalletList({ op: 'list' });
+await stream.manageWalletList({ op: 'get', id: created.list.id });
+// Explicitly delete with the current revision when no longer needed:
+// await stream.manageWalletList({ op: 'delete', id: created.list.id, revision: changed.list.revision });
+```
+
+Replace the placeholder addresses, wait for the SDK `ready` status, and await each
+control. Raw WS uses `{type:"wallet_list", ...control}` and receives
+`{type:"wallet_list_result", op, list?, lists?, limits}`. Revisions are decimal
+strings. `replace` supplies the whole name/address snapshot; `replace` and `delete`
+require the current revision. A conflict leaves the existing stored row intact.
+`list` is summary-only so a full BUSINESS account cannot exceed the control-frame
+byte budget; use `get` for one list's addresses. There is no new REST endpoint.
+
+Limits reuse existing tier budgets: ULTRA 10 lists / 100 wallets per list;
+BUSINESS and ENTERPRISE 20 / 500. Lists contain 1..limit unique Solana addresses,
+with a unique owner-scoped name of 1..64 characters. Delete an empty group instead
+of subscribing with an empty wallet filter. The SDK supports 10 simultaneous
+subscriptions; server subscription and connection caps remain authoritative.
+
+A subscription's top-level `wallet_list` is an ID, valid only for `early:trades`.
+Do not combine it with `filters.wallets` or `filters.actors`; direction, amount,
+protocol and other compatible filters still intersect. Omitting it on update
+keeps the reference; explicit `wallet_list: null` detaches it, so supply replacement
+filters if the subscription should remain wallet-scoped.
+
+Subscribe/update acknowledgements and `list` controls report
+`wallet_list: {id, revision}`. A successful edit atomically replaces each active
+subscription's in-memory index, then emits `wallet_list_updated` with the active
+revision. An update arriving during replay ends the old replay as incomplete;
+clients retain the prior safe cursor. Reconnect reloads the current saved revision,
+and replay uses that current list, not historical list membership.
+
+Local successful writes are applied to current owner subscriptions immediately.
+Edits from another process are discovered by a 5-second refresh. Unchanged rows
+return their revision without resending wallet arrays. A previous snapshot is valid
+for at most 15 seconds after a successful read. On deletion, missing access, failed
+application, excess wallets after tier downgrade, or expiry, the affected binding
+is removed and `wallet_list_unavailable` is sent. The SDK surfaces it as a `gap`;
+resubscribe after correcting the cause. A transient failed read does not extend TTL.
+Normal auth expiry/downgrade enforcement still applies.
+
+A dedicated one-connection database pool handles controls/refresh, with 2-second
+query deadlines and at most 8 admitted list queries. At most 256 distinct active
+owner/list references are materialized per gateway, within the existing 100,000
+binding budget. Overload fails explicitly. Decode, matching, live publication and
+replay never query the database; delivery checks the local snapshot expiry and tier
+limit. Do not describe this bounded local implementation as zero-overhead or as
+complete wallet transaction coverage.
+
+## Client scope
+
+The managed early client ships in this TypeScript package only. The Python package,
+MCP server, ElizaOS plugin and Solana Agent Kit plugin do not include it; use the raw
+WebSocket contract there. The existing `sniperRecent()` / `sniperByDeployer()` helpers
+are separate from direct six-family subscriptions and private-list WS controls.
+
+Coverage and dated local benchmarks (with raw downloads and methodology):
+https://madeonsol.com/solutions/shredprism-stream. Those development measurements do
+not establish a fixed customer head start.

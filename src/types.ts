@@ -702,9 +702,10 @@ export interface StreamToken {
   /** Present only for activated ShredPrism and ULTRA/BUSINESS/ENTERPRISE. */
   early_ws_url?: string;
   early_stream?: {
-    channels: "early:deploys"[];
-    subscribe_example: { type: "subscribe"; channels: "early:deploys"[] };
+    channels: ("early:deploys" | "early:locks" | "early:trades" | "early:liquidity" | "early:migrations" | "early:token_changes")[];
+    subscribe_example: { type: "subscribe"; channels: ("early:deploys" | "early:locks" | "early:trades" | "early:liquidity" | "early:migrations" | "early:token_changes")[] };
     execution_status: "unknown";
+    coverage: string;
     note: string;
   };
   /** DEX trade stream URL — only present for Ultra tier subscribers */
@@ -3237,6 +3238,66 @@ export interface TokenTopTradersResponse {
   /** v1.23.4 — trade-coverage disclosure; when `in_scope` is false an empty
    *  `traders` list means "outside the write-gate", not "nobody traded". */
   coverage?: TradeCoverage;
+}
+
+/** Early WebSocket control contract; only channels advertised in `early_stream.channels` are served. */
+export type EarlyChannel = "early:deploys" | "early:locks" | "early:trades" | "early:liquidity" | "early:migrations" | "early:token_changes";
+export type EarlyEventFormat = "full" | "compact-v1";
+export type EarlyAmountField = "requested_amount_raw" | "requested_input_raw" | "max_input_raw" | "min_output_raw" | "target_output_raw"
+  | "target_lp_output_raw" | "requested_lp_input_raw" | "max_base_input_raw" | "max_quote_input_raw"
+  | "min_base_output_raw" | "min_quote_output_raw" | "requested_base_input_raw" | "requested_quote_input_raw";
+/** One or both inclusive bounds, canonical unsigned decimal u64 strings.
+ * These fields are requested instruction arguments, never realized fills or USD. */
+export type EarlyAmountFilter = { field: EarlyAmountField; mint: string } & (
+  { min_raw: string; max_raw?: string } | { min_raw?: string; max_raw: string }
+);
+export interface EarlyStreamFilters {
+  mints?: string[];
+  /** Instruction actor, not any account/fee payer. Do not combine with actors. */
+  wallets?: string[];
+  actors?: string[];
+  launchpads?: ("pumpfun" | "launchlab")[];
+  protocols?: string[];
+  actions?: string[];
+  /** Both directions and wallet_labels require a trade-only subscription. */
+  directions?: ("buy" | "sell")[];
+  wallet_labels?: ("kol" | "dev" | "alpha")[];
+  /** Maximum four rules, combined with AND. Unknown/missing amount or mint fails the filter. */
+  amounts?: EarlyAmountFilter[];
+}
+export interface EarlyWalletList {
+  id: string; name: string; wallets: string[]; revision: string; updated_at: string;
+}
+export type EarlyWalletListSummary = Omit<EarlyWalletList, 'wallets'> & { wallet_count: number };
+export type EarlyWalletListControl =
+  | { op: 'list' }
+  | { op: 'get'; id: string }
+  | { op: 'create'; name: string; wallets: string[] }
+  | { op: 'replace'; id: string; revision: string; name: string; wallets: string[] }
+  | { op: 'delete'; id: string; revision: string };
+export interface EarlyWalletListResult {
+  type: 'wallet_list_result'; op: EarlyWalletListControl['op'];
+  lists?: (EarlyWalletList | EarlyWalletListSummary)[];
+  list?: EarlyWalletList | { id: string; deleted: true; revision: string };
+  limits: { lists: number; wallets: number };
+}
+export interface EarlySubscribeControl {
+  type: "subscribe";
+  sub_id?: string;
+  /** Owner-scoped saved wallet list; trade-only and mutually exclusive with wallets/actors. */
+  wallet_list?: string | null;
+  channels: EarlyChannel[];
+  filters?: EarlyStreamFilters;
+  format?: EarlyEventFormat;
+  resume?: { instance: string; seq: number };
+}
+export interface EarlyUpdateControl {
+  wallet_list?: string | null;
+  type: "update";
+  sub_id?: string;
+  /** Omit to preserve existing filters; {} explicitly clears them. */
+  filters?: EarlyStreamFilters;
+  format?: EarlyEventFormat;
 }
 
 /* ── ULTRA+ early sniper observations ── */

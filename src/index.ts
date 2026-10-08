@@ -1,3 +1,7 @@
+export { followTokens, walletTrades } from './early-subscriptions.js';
+import { MadeOnSolEarlyStream, type EarlyStreamOptions } from './early-stream.js';
+export { MadeOnSolEarlyStream, expandEarlyFrame, type EarlyStreamOptions, type EarlyCursor, type EarlyFrame } from './early-stream.js';
+export type { EarlyWalletList, EarlyWalletListSummary, EarlyWalletListControl, EarlyWalletListResult, EarlyChannel, EarlyAmountField, EarlyAmountFilter, EarlyStreamFilters, EarlyEventFormat, EarlySubscribeControl, EarlyUpdateControl } from './types.js';
 import { SolanaPaymentBudget, createSolanaPaidFetch, type SolanaPaymentPolicy } from "./solana-payment.js";
 import { readPaidResult, x402PaymentErrorFrom, type PaidResultProvenance, type RecoveryOptions } from "./x402-recovery.js";
 export { SolanaPaymentBudget, type SolanaPaymentPolicy, type SolanaPaymentProposal } from "./solana-payment.js";
@@ -1315,6 +1319,11 @@ export class MadeOnSolREST {
     return this.request("POST", "/stream/token", opts?.rotate ? { rotate: true } : undefined);
   }
 
+  /** ULTRA+ ShredPrism early-stream client; `early_ws_url` must be present in token discovery. */
+  earlyStream(opts: Omit<EarlyStreamOptions, 'getToken'>): MadeOnSolEarlyStream {
+    return new MadeOnSolEarlyStream({ ...opts, getToken: () => this.getStreamToken() });
+  }
+
   /**
    * Open a managed real-time WebSocket stream. Handles the token fetch (the
    * token does not expire; `getStreamToken()` is called on every (re)connect),
@@ -2037,4 +2046,5 @@ function numHeader(res: Response, name: string): number | null {
 export function createRESTClient(apiKey: string, baseUrl?: string): MadeOnSolREST {
   return new MadeOnSolREST({ apiKey, baseUrl });
 }
+
 

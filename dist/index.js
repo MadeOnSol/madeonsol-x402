@@ -1,3 +1,6 @@
+export { followTokens, walletTrades } from './early-subscriptions.js';
+import { MadeOnSolEarlyStream } from './early-stream.js';
+export { MadeOnSolEarlyStream, expandEarlyFrame } from './early-stream.js';
 import { SolanaPaymentBudget, createSolanaPaidFetch } from "./solana-payment.js";
 import { readPaidResult, x402PaymentErrorFrom } from "./x402-recovery.js";
 export { SolanaPaymentBudget } from "./solana-payment.js";
@@ -14,12 +17,13 @@ function resolveAuthHeaders(mode, key) {
 }
 /**
  * x402-prefixed paths this client calls that have NO keyless x402 route: the
- * server's x402 price catalog never listed them and production answers 404.
+ * server does not offer them for keyless purchase (unavailable or retired).
  * They work with an API key (the prefix is rewritten to `/api/v1/`); in x402
  * (private-key) mode the method throws before any network call or payment.
  * `{param}` stands for one path segment.
  */
 export const X402_UNAVAILABLE_PATHS = [
+    "/api/x402/sniper/recent",
     "/api/x402/kol/scouts/leaderboard",
     "/api/x402/kol/coordination/history",
     "/api/x402/tokens/{mint}/kol-consensus",
@@ -34,9 +38,11 @@ const X402_UNAVAILABLE_RES = X402_UNAVAILABLE_PATHS.map((p) => [p, new RegExp(`^
 export class KeylessNotAvailableError extends Error {
     path;
     constructor(path) {
-        super(`${path} is not available via x402 (no keyless route; the server answers 404). ` +
+        super(`${path} is not available via x402 (no keyless route; the route is unavailable or retired). ` +
             "Use an API-key client instead: createClient(process.env.MADEONSOL_API_KEY). " +
-            "Free key at https://madeonsol.com/pricing");
+            (path === "/api/x402/sniper/recent"
+                ? "Sniper requires ULTRA/BUSINESS/ENTERPRISE. Plans: https://madeonsol.com/pricing"
+                : "Free key at https://madeonsol.com/pricing"));
         this.name = "KeylessNotAvailableError";
         this.path = path;
     }
@@ -310,11 +316,9 @@ export class MadeOnSolX402 {
         return this.request(`/api/x402/tokens/${encodeURIComponent(mint)}/cap-table`);
     }
     /**
-     * v1.21 — Recent deshred sniper deploys from elite/good-tier tracked
-     * deployers, detected seconds after launch. Each deploy carries deployer
-     * stats (bond rate, runner rate) and a slot-window snipe `footprint`
-     * (null until the ~10-min settle window has passed). The keyed ULTRA
-     * `?watchlist` filter is ignored on the x402 route. **x402: $0.01**
+     * Early deploy observations; ULTRA/BUSINESS/ENTERPRISE API key required.
+     * Keyless mode throws KeylessNotAvailableError before a request or payment.
+     * Observed instructions are not execution proof; no guaranteed lead time.
      */
     async sniperRecent(params) {
         return this.request("/api/x402/sniper/recent", params);
@@ -505,15 +509,15 @@ export class MadeOnSolREST {
     async sniperByDeployer(wallet, params) {
         return this.request("GET", `/sniper/by-deployer/${encodeURIComponent(wallet)}`, undefined, params);
     }
-    /** List your custom sniper watchlist (tracked deployer wallets). PRO+/ULTRA. */
+    /** List your custom sniper watchlist (tracked deployer wallets). ULTRA/BUSINESS/ENTERPRISE. */
     async sniperWatchlist() {
         return this.request("GET", "/sniper/watchlist");
     }
-    /** Add one or many deployer wallets to your sniper watchlist. PRO+/ULTRA. */
+    /** Add one or many deployer wallets to your sniper watchlist. ULTRA/BUSINESS/ENTERPRISE. */
     async sniperWatchlistAdd(params) {
         return this.request("POST", "/sniper/watchlist", params);
     }
-    /** Remove a deployer wallet from your sniper watchlist. PRO+/ULTRA. */
+    /** Remove a deployer wallet from your sniper watchlist. ULTRA/BUSINESS/ENTERPRISE. */
     async sniperWatchlistRemove(wallet) {
         return this.request("DELETE", `/sniper/watchlist/${encodeURIComponent(wallet)}`);
     }
@@ -653,6 +657,10 @@ export class MadeOnSolREST {
      */
     async getStreamToken(opts) {
         return this.request("POST", "/stream/token", opts?.rotate ? { rotate: true } : undefined);
+    }
+    /** ULTRA+ ShredPrism early-stream client; `early_ws_url` must be present in token discovery. */
+    earlyStream(opts) {
+        return new MadeOnSolEarlyStream({ ...opts, getToken: () => this.getStreamToken() });
     }
     /**
      * Open a managed real-time WebSocket stream. Handles the token fetch (the
@@ -1273,11 +1281,9 @@ export class MadeOnSolREST {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/top-traders`, undefined, params);
     }
     /**
-     * v1.21 — Deshred sniper deploy feed: new pump.fun deploys reconstructed from
-     * shred-level data ~500ms before on-chain confirmation. PRO sees elite/good
-     * deployers; ULTRA sees every tier. Each deploy carries deployer stats and a
-     * slot-window snipe `footprint` (null until the ~10-min settle window has
-     * passed — absent, not zero). PRO/ULTRA only.
+     * Early deploy observations; ULTRA/BUSINESS/ENTERPRISE only.
+     * An observation does not prove successful execution. Use per-action identity
+     * and separate execution status; unknown enrichment remains null.
      */
     async sniperRecent(params) {
         return this.request("GET", "/sniper/recent", undefined, params);
