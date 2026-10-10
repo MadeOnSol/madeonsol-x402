@@ -1510,6 +1510,12 @@ export interface CandlesParams {
     from?: string;
     /** ISO 8601 end of range (inclusive). */
     to?: string;
+    /**
+     * Keyed API only: "allow" opts in to partial delivery. When the server read budget runs out,
+     * the answer is then 200 with truncated=true and covered_from (continue with to=covered_from)
+     * instead of 503 read_budget_exhausted.
+     */
+    partial?: "allow";
 }
 /**
  * One OHLC bucket. The `t`…`market_cap_usd` fields are present on all tiers
@@ -3102,6 +3108,237 @@ export type EarlyAmountFilter = {
     min_raw?: string;
     max_raw: string;
 });
+/** Fields every ShredPrism observation carries inside `frame.data`. */
+export interface EarlyObservationBase {
+    schema_version: 1;
+    chain: "solana";
+    channel: EarlyChannel;
+    signature: string;
+    event_id: string;
+    observed_slot: string;
+    first_observed_at: string;
+    source: "shredprism";
+    source_region: string;
+    observation_stage: "observed";
+    execution_status: "unknown";
+    decoding_basis: "outer_instruction";
+    decoder_version: "deploys-1" | "channels-1";
+    transaction_version: "legacy" | 0 | 1;
+    transaction_config: EarlyTransactionConfig | null;
+    lifetime_token: string;
+    outer_instruction_index: number;
+    program_id: string;
+    fee_payer: string;
+    action: string;
+    actor: string;
+    attribution_basis: string;
+    /** Roster snapshot for `actor`: present on every non-deploy event, absent on `early:deploys`. A database snapshot, not an on-chain fact. */
+    wallet_label?: EarlyWalletLabel;
+}
+/** `wallet_label` on non-deploy ShredPrism events. Only `early:trades` accepts the `wallet_labels` filter. */
+export interface EarlyWalletLabel {
+    wallet: string;
+    labels: ("kol" | "dev" | "alpha")[];
+    available_labels: ("kol" | "dev" | "alpha")[];
+    observed_at_ms: number | null;
+    basis: "database_roster_snapshot";
+    complete: boolean;
+}
+/** Supported `early:deploys` create observation. */
+export interface EarlyDeployObservationData extends EarlyObservationBase {
+    channel: "early:deploys";
+    decoder_version: "deploys-1";
+    action: "create";
+    instruction: "create" | "create_v2" | "initialize" | "initialize_v2" | "initialize_with_token_2022";
+    mint: string;
+    launchpad: "pumpfun" | "launchlab";
+    attribution_basis: "instruction_user";
+    name: string | null;
+    symbol: string | null;
+}
+/** Supported Pump.fun/PumpSwap `early:trades` instruction intent. */
+export interface EarlyTradeObservationData extends EarlyObservationBase {
+    channel: "early:trades";
+    decoder_version: "channels-1";
+    protocol: "pumpfun" | "pumpswap";
+    instruction: "buy" | "sell" | "buy_exact_sol_in" | "buy_exact_quote_in";
+    action: "swap_intent";
+    attribution_basis: "instruction_user";
+    mint: string;
+    quote_mint: string;
+    pool: string;
+    direction: "buy" | "sell";
+    swap_mode: "exact_in" | "exact_out";
+    input_mint: string;
+    output_mint: string;
+    requested_input_raw: string | null;
+    max_input_raw: string | null;
+    min_output_raw: string | null;
+    target_output_raw: string | null;
+}
+export interface EarlyLiquidityCreatePoolObservationData extends EarlyObservationBase {
+    channel: "early:liquidity";
+    decoder_version: "channels-1";
+    protocol: "pumpswap";
+    instruction: "create_pool";
+    action: "create_pool";
+    attribution_basis: "instruction_creator";
+    pool: string;
+    mint: string;
+    quote_mint: string;
+    lp_mint: string;
+    pool_index: number;
+    requested_base_input_raw: string;
+    requested_quote_input_raw: string;
+    coin_creator: string;
+}
+export interface EarlyLiquidityAddObservationData extends EarlyObservationBase {
+    channel: "early:liquidity";
+    decoder_version: "channels-1";
+    protocol: "pumpswap";
+    instruction: "deposit";
+    action: "add_liquidity";
+    attribution_basis: "instruction_user";
+    pool: string;
+    mint: string;
+    quote_mint: string;
+    lp_mint: string;
+    target_lp_output_raw: string;
+    max_base_input_raw: string;
+    max_quote_input_raw: string;
+}
+export interface EarlyLiquidityRemoveObservationData extends EarlyObservationBase {
+    channel: "early:liquidity";
+    decoder_version: "channels-1";
+    protocol: "pumpswap";
+    instruction: "withdraw";
+    action: "remove_liquidity";
+    attribution_basis: "instruction_user";
+    pool: string;
+    mint: string;
+    quote_mint: string;
+    lp_mint: string;
+    requested_lp_input_raw: string;
+    min_base_output_raw: string;
+    min_quote_output_raw: string;
+}
+export type EarlyLiquidityObservationData = EarlyLiquidityCreatePoolObservationData | EarlyLiquidityAddObservationData | EarlyLiquidityRemoveObservationData;
+/** Pump.fun migration instruction observed before execution proof. */
+export interface EarlyMigrationObservationData extends EarlyObservationBase {
+    channel: "early:migrations";
+    decoder_version: "channels-1";
+    protocol: "pumpfun";
+    instruction: "migrate" | "migrate_v2";
+    action: "migrate";
+    attribution_basis: "instruction_user";
+    mint: string;
+    quote_mint: string;
+    source_curve: string;
+    destination_pool: string;
+    launchpad: "pumpfun";
+    destination_venue: "pumpswap";
+}
+/** Protocol-specific schedule encoded by an `early:locks` create instruction. */
+export type EarlyLockSchedule = {
+    start_time: string;
+    period_seconds: string;
+    amount_per_period_raw: string;
+    cliff_time: string;
+    cliff_amount_raw: string;
+    number_of_periods?: string;
+} | {
+    releases: {
+        release_time: string;
+        amount_raw: string;
+    }[];
+};
+export interface EarlyLockObservationData extends EarlyObservationBase {
+    channel: "early:locks";
+    decoder_version: "channels-1";
+    protocol: "streamflow" | "jupiter_lock" | "bonfida";
+    instruction: "create" | "create_vesting_escrow" | "create_vesting_escrow_v2";
+    action: "create_lock";
+    actor: string;
+    sender: string;
+    recipient: string | null;
+    lock_account: string;
+    mint: string | null;
+    lock_kind: "stream_or_vesting" | "token_vesting";
+    attribution_basis: "instruction_sender" | "instruction_source_owner";
+    requested_amount_raw: string | null;
+    schedule: EarlyLockSchedule;
+    sender_token_account?: string;
+    destination_token_account?: string;
+    cancelable_by_sender?: boolean;
+    cancelable_by_recipient?: boolean;
+    update_recipient_mode?: number;
+    cancel_mode?: number;
+    missing_fields?: string[];
+}
+export interface EarlyTokenAmountChangeObservationData extends EarlyObservationBase {
+    channel: "early:token_changes";
+    decoder_version: "channels-1";
+    protocol: "spl_token" | "token_2022";
+    instruction: "mint_to" | "mint_to_checked" | "burn" | "burn_checked";
+    action: "mint" | "burn";
+    attribution_basis: "instruction_authority";
+    authority: string;
+    authority_is_signer: boolean;
+    mint: string;
+    token_account: string;
+    requested_amount_raw: string;
+    decimals: number | null;
+}
+export interface EarlyTokenFreezeObservationData extends EarlyObservationBase {
+    channel: "early:token_changes";
+    decoder_version: "channels-1";
+    protocol: "spl_token" | "token_2022";
+    instruction: "freeze" | "thaw";
+    action: "freeze" | "thaw";
+    attribution_basis: "instruction_authority";
+    authority: string;
+    authority_is_signer: boolean;
+    mint: string;
+    token_account: string;
+    target_scope: "token_account";
+}
+export interface EarlyTokenAuthorityObservationData extends EarlyObservationBase {
+    channel: "early:token_changes";
+    decoder_version: "channels-1";
+    protocol: "spl_token" | "token_2022";
+    instruction: "set_authority";
+    action: "set_authority";
+    attribution_basis: "instruction_authority";
+    authority: string;
+    authority_is_signer: boolean;
+    authority_type: "mint_tokens" | "freeze_account" | "account_owner" | "close_account";
+    target_scope: "mint" | "token_account";
+    target_account: string;
+    mint: string | null;
+    token_account: string | null;
+    new_authority: string | null;
+    authority_revocation_requested: boolean;
+    missing_fields: string[];
+}
+export type EarlyTokenChangeObservationData = EarlyTokenAmountChangeObservationData | EarlyTokenFreezeObservationData | EarlyTokenAuthorityObservationData;
+export type EarlyObservationData = EarlyDeployObservationData | EarlyLockObservationData | EarlyTradeObservationData | EarlyLiquidityObservationData | EarlyMigrationObservationData | EarlyTokenChangeObservationData;
+/** Outcome repeats the original observation fields and adds execution evidence. */
+export type EarlyOutcomeData = Omit<EarlyObservationData, "observation_stage" | "execution_status" | "event_id"> & {
+    event_id: string;
+    observed_event_id: string;
+    observation_stage: "outcome";
+    execution_status: "succeeded" | "failed" | "unresolved";
+    /** Evidence source: "kaldera_rpc" (status lookup: deploys and the fallback) or "kaldera_status_stream" (pushed
+     * finalized status, the five non-deploy channels); null without evidence. Treat unknown values as a valid source. */
+    outcome_source: "kaldera_rpc" | "kaldera_status_stream" | (string & {}) | null;
+    outcome_at: string;
+    commitment: "processed" | "confirmed" | "finalized" | null;
+    slot?: string;
+    error?: unknown;
+    resolution_status?: "unresolved";
+    reason?: "finalization_timeout" | "outcome_timeout";
+    last_observed_outcome?: Record<string, unknown> | null;
+};
 export interface EarlyStreamFilters {
     mints?: string[];
     /** Instruction actor, not any account/fee payer. Do not combine with actors. */
@@ -3303,6 +3540,10 @@ export interface TokenDepthQuote {
      * (partial fill reported) | "exceeds_loaded_bins" | "price_out_of_range" (numbers null).
      */
     status?: "filled" | "pool_liquidity_exhausted" | "exceeds_loaded_bins" | "exceeds_loaded_ticks" | "price_out_of_range";
+    /** Concentrated models only: true = this size fills completely inside the loaded window; false = no usable quote for this size. */
+    available?: boolean;
+    /** Meteora DLMM, unavailable sizes only: SOL input (incl. fees) the loaded bins can absorb. null when available. */
+    fillable_up_to_sol?: number | null;
     /** Tokens received for that buy (UI units, fee-adjusted). null only on a concentrated pool whose status is not quotable. */
     tokens_out: number | null;
     /** Average execution price in SOL per token. */
@@ -3312,7 +3553,7 @@ export interface TokenDepthQuote {
 }
 /** SOL required to move the pool's spot price by 1% / 5% / 10%. */
 export interface TokenDepthToMovePrice {
-    /** null on a concentrated pool when the loaded window does not reach that price. */
+    /** null on a concentrated pool when the loaded window does not reach that price, or when no liquidity lies between the current and target price (never 0). */
     "1pct": number | null;
     "5pct": number | null;
     "10pct": number | null;
@@ -3370,6 +3611,8 @@ export interface TokenDepthPool extends TokenDepthPoolBase {
  *  "reserves_unavailable". */
 export interface TokenDepthUnsupportedPool extends TokenDepthPoolBase {
     reason: string;
+    /** With reason "dlmm_insufficient_liquidity_in_loaded_bins": SOL input (incl. fees) the loaded bins can absorb (0 = no buy-side liquidity). */
+    fillable_up_to_sol?: number;
 }
 /**
  * v1.22 — Per-pool price-impact / slippage for a token: "how much SOL to move
@@ -3697,6 +3940,71 @@ export interface TokenLocksSummary {
     }) | null;
     /** Active contracts the sender can still cancel (pull the funds back). */
     active_cancelable_by_sender: number;
+}
+/** Panels a terminal can ask for. There is no default set: name every module you render. */
+export type TokenIntelligenceModuleId = "snapshot" | "risk" | "buyer_quality" | "holders" | "flow" | "kol" | "locks" | "top_traders";
+/** Per-module outcome; a non-ready module never carries `data` (a failure is never a zero). */
+export type TokenIntelligenceModuleStatus = "ready" | "partial_history" | "unverified" | "unavailable" | "timeout";
+/** Query params for GET /tokens/{mint}/intelligence (and the RHC twin). */
+export interface TokenIntelligenceParams {
+    /**
+     * Required. Modules as an array or a comma-separated string. Budget: at most
+     * 5 modules and total cost 8 (snapshot 2, risk 2, buyer_quality 2, holders 3,
+     * flow 3, kol 1, locks 1, top_traders 2); over budget is HTTP 400
+     * `include_budget_exceeded` before any read. `holders` is opt-in only.
+     */
+    include: readonly TokenIntelligenceModuleId[] | string;
+}
+export interface TokenIntelligenceHistoricalCompleteness {
+    threshold: "verified_interval";
+    observed: "verified" | "not_verified" | "unknown";
+    threshold_met: boolean;
+}
+export interface TokenIntelligenceModule {
+    status: TokenIntelligenceModuleStatus;
+    /** Machine reason for any non-ready status (tier_required, not_found, module_timeout, request_deadline, history_not_verified, not_captured, source_error, ...). */
+    reason: string | null;
+    /** The source's own timestamp; null when the source gives none. Never the request time. */
+    as_of: string | null;
+    provenance: {
+        source: string;
+        chain: string;
+        upstream_status: number | null;
+        cache: "hit" | "miss" | "none";
+    };
+    coverage: {
+        kind: "point_in_time" | "trade_derived";
+        historical_completeness: TokenIntelligenceHistoricalCompleteness | null;
+    };
+    limitations: string[];
+    /** The source endpoint's own body. Absent when unavailable / timed out. */
+    data?: Record<string, unknown>;
+}
+export interface TokenIntelligenceBudget {
+    cost_used: number;
+    cost_limit: number;
+    max_modules: number;
+    source_reads: number;
+    module_timeout_ms: number;
+    request_deadline_ms: number;
+    concurrency: number;
+}
+/** GET /tokens/{mint}/intelligence — Solana, base58, SOL-native. */
+export interface TokenIntelligenceResponse {
+    contract_version: 1;
+    chain: "solana";
+    chain_id: null;
+    /** Base58 mint as requested. */
+    address: string;
+    address_format: "base58";
+    native_asset: "SOL";
+    requested: TokenIntelligenceModuleId[];
+    /** Response assembly time, NOT an observation time (each module has its own `as_of`). */
+    generated_at: string;
+    budget: TokenIntelligenceBudget;
+    summary: Record<TokenIntelligenceModuleStatus, number>;
+    /** Only the requested modules are present. */
+    modules: Partial<Record<TokenIntelligenceModuleId, TokenIntelligenceModule>>;
 }
 /** Query params for GET /tokens/{mint}/locks. */
 export interface TokenLocksParams {
@@ -4806,7 +5114,7 @@ export interface DeployerRewardsResponse {
         note: string;
     };
 }
-export type DeployerActivityEventType = "launch" | "dev_buy" | "dev_sell" | "creator_transferred" | "fee_claim" | "funding_in" | "capital_out";
+export type DeployerActivityEventType = "launch" | "dev_buy" | "dev_sell" | "dev_token_transfer_out" | "dev_token_transfer_in" | "creator_transferred" | "fee_claim" | "funding_in" | "capital_out";
 /**
  * One event of a deployer's activity timeline. Fields present depend on
  * `type`; addresses are raw facts of the concrete event, never identity claims.
@@ -4832,6 +5140,18 @@ export interface DeployerActivityEvent {
     sol?: number | null;
     tokens?: number | null;
     price_usd?: number | null;
+    /** Realtime dev-event actor. PRO sees only direct developer events; ULTRA+ may also see proven linked-wallet events when identity stitching is released. */
+    actor_wallet?: string | null;
+    actor_role?: "deployer" | "linked_wallet" | null;
+    /** Exact base-unit amount on persisted realtime dev events. */
+    token_amount_raw?: string | null;
+    supply_pct?: number | null;
+    venue?: string | null;
+    /** Raw transfer counterparty; never an identity claim. */
+    counterparty?: string | null;
+    counterparty_class?: string | null;
+    /** Timeline source/projection marker for realtime dev events. */
+    feed?: string | null;
     first_at?: string | null;
     last_at?: string | null;
     aggregate?: boolean;
@@ -4852,7 +5172,7 @@ export interface DeployerActivityEvent {
     first_tx?: string | null;
     /** Developer token transfers: number of counterparties of this (tx, mint, direction, actor) aggregate; null on rows stored before 2026-10-06. */
     counterparty_count?: number | null;
-    /** Developer token transfers: true when re-derived from the chain after a delivery gap (never delivered live); `at` is then chain time. */
+    /** Developer token transfers: true when recovered into history after a delivery gap (never delivered live). `time_basis` says the clock: chain (re-derived from a block) or ingest (spool replay keeps the receive time). */
     recovered?: boolean;
     /** With `recovered: true`: when the recovery stored the event. */
     recovered_at?: string | null;
@@ -5011,7 +5331,7 @@ export interface DeployerActivityParams {
     cursor?: string;
     /** Requested window start (ISO 8601); clamped to the plan window. */
     since?: string;
-    /** Comma list of event types. */
+    /** Comma-separated event types. */
     types?: string;
 }
 /** Reputation grade — the deployers.tier CHECK set (migration 031). `unranked` = too few deploys to grade, not "bad". (Earlier types listed "neutral" / "spammer", which are Robinhood Chain tiers and never appear here.) */

@@ -1,7 +1,7 @@
 export { followTokens, walletTrades } from './early-subscriptions.js';
 import { MadeOnSolEarlyStream, type EarlyStreamOptions } from './early-stream.js';
 export { MadeOnSolEarlyStream, expandEarlyFrame, type EarlyStreamOptions, type EarlyCursor, type EarlyFrame } from './early-stream.js';
-export type { EarlyWalletList, EarlyWalletListSummary, EarlyWalletListControl, EarlyWalletListResult, EarlyChannel, EarlyAmountField, EarlyAmountFilter, EarlyStreamFilters, EarlyEventFormat, EarlySubscribeControl, EarlyUpdateControl } from './types.js';
+export type { EarlyWalletList, EarlyWalletListSummary, EarlyWalletListControl, EarlyWalletListResult, EarlyChannel, EarlyAmountField, EarlyAmountFilter, EarlyStreamFilters, EarlyEventFormat, EarlySubscribeControl, EarlyUpdateControl, EarlyObservationBase, EarlyWalletLabel, EarlyDeployObservationData, EarlyTradeObservationData, EarlyLiquidityCreatePoolObservationData, EarlyLiquidityAddObservationData, EarlyLiquidityRemoveObservationData, EarlyLiquidityObservationData, EarlyMigrationObservationData, EarlyLockSchedule, EarlyLockObservationData, EarlyTokenAmountChangeObservationData, EarlyTokenFreezeObservationData, EarlyTokenAuthorityObservationData, EarlyTokenChangeObservationData, EarlyObservationData, EarlyOutcomeData } from './types.js';
 import { SolanaPaymentBudget, createSolanaPaidFetch, type SolanaPaymentPolicy } from "./solana-payment.js";
 import { readPaidResult, x402PaymentErrorFrom, type PaidResultProvenance, type RecoveryOptions } from "./x402-recovery.js";
 export { SolanaPaymentBudget, type SolanaPaymentPolicy, type SolanaPaymentProposal } from "./solana-payment.js";
@@ -63,6 +63,8 @@ import type {
   TokenLocksResponse,
   TokenLocksFeedParams,
   TokenLocksFeedResponse,
+  TokenIntelligenceParams,
+  TokenIntelligenceResponse,
   TokenUnlocksParams,
   TokenUnlocksResponse,
   TokenFeeSharesResponse,
@@ -308,6 +310,13 @@ export type {
   TokenLocksParams,
   TokenLocksResponse,
   TokenLocksFeedParams,
+  TokenIntelligenceModuleId,
+  TokenIntelligenceModuleStatus,
+  TokenIntelligenceParams,
+  TokenIntelligenceHistoricalCompleteness,
+  TokenIntelligenceModule,
+  TokenIntelligenceBudget,
+  TokenIntelligenceResponse,
   TokenFeedPagination,
   TokenLocksFeedPagination,
   TokenFeedStreamPointer,
@@ -1561,6 +1570,23 @@ export class MadeOnSolREST {
   async tokenLocks(mint: string, params?: TokenLocksParams): Promise<TokenLocksResponse> {
     return this.request("GET", `/tokens/${encodeURIComponent(mint)}/locks`, undefined,
       params as Record<string, string | number | undefined>);
+  }
+
+  /**
+   * **Staged, not released**: answers HTTP 404 `token_intelligence_not_released`
+   * until the API activates it. Include-scoped token intelligence for terminal
+   * panels, `GET /tokens/{mint}/intelligence?include=...`. Name every module you
+   * render (no default; at most 5 modules and total cost 8; `holders` is opt-in
+   * only). Each module carries its own `status` (ready / partial_history /
+   * unverified / unavailable / timeout), the source's `as_of`, `provenance` and
+   * history coverage; one failing module never fails or zeroes another, and a
+   * non-ready module carries no `data`.
+   * **KEYED (v1) — requires an `msk_` API key; there is no x402 route.** PRO+ —
+   * BASIC receives HTTP 403.
+   */
+  async tokenIntelligence(mint: string, params: TokenIntelligenceParams): Promise<TokenIntelligenceResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/intelligence`, undefined,
+      { include: typeof params.include === "string" ? params.include : params.include.join(",") });
   }
 
   /**

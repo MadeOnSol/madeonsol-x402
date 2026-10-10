@@ -26,15 +26,16 @@ export function expandEarlyFrame(value) {
         return frame;
     if (frame.format !== 'compact-v1' || !frame.data || typeof frame.data !== 'object' || Array.isArray(frame.data))
         throw new Error('invalid_compact_frame');
+    const input = frame.data;
     const data = {};
-    for (const k of Object.keys(frame.data)) {
+    for (const k of Object.keys(input)) {
         const key = k.startsWith('~') ? k.slice(1) : names.get(k);
         if (key === undefined || Object.hasOwn(data, key))
             throw new Error('invalid_compact_frame');
         if (key === '__proto__')
-            Object.defineProperty(data, key, { value: frame.data[k], enumerable: true, writable: true, configurable: true });
+            Object.defineProperty(data, key, { value: input[k], enumerable: true, writable: true, configurable: true });
         else
-            data[key] = frame.data[k];
+            data[key] = input[k];
     }
     const result = { ...frame, data };
     delete result.format;

@@ -1,12 +1,12 @@
-import type { EarlySubscribeControl, EarlyStreamFilters, EarlyEventFormat, EarlyWalletListControl, EarlyWalletListResult, StreamToken } from './types.js';
+import type { EarlySubscribeControl, EarlyStreamFilters, EarlyEventFormat, EarlyWalletListControl, EarlyWalletListResult, EarlyObservationData, EarlyOutcomeData, StreamToken } from './types.js';
 import { expandEarlyFrame } from './early-codec.js';
 export { expandEarlyFrame } from './early-codec.js';
-export type { EarlyChannel, EarlyAmountField, EarlyAmountFilter, EarlyStreamFilters, EarlyEventFormat, EarlySubscribeControl, EarlyUpdateControl } from './types.js';
+export type { EarlyChannel, EarlyAmountField, EarlyAmountFilter, EarlyStreamFilters, EarlyEventFormat, EarlySubscribeControl, EarlyUpdateControl, EarlyObservationBase, EarlyWalletLabel, EarlyDeployObservationData, EarlyTradeObservationData, EarlyLiquidityObservationData, EarlyMigrationObservationData, EarlyLockSchedule, EarlyLockObservationData, EarlyTokenChangeObservationData, EarlyObservationData, EarlyOutcomeData } from './types.js';
 
 export interface EarlyCursor { instance: string; seq: number }
 export interface EarlyFrame {
   event?: string; type?: string; sub_id?: string; id?: string; cursor?: EarlyCursor;
-  data?: Record<string, unknown>; [key: string]: unknown;
+  data?: EarlyObservationData | EarlyOutcomeData | Record<string, unknown>; [key: string]: unknown;
 }
 export interface EarlyStreamOptions {
   /** Existing non-expiring token, fetched on every connect; never rotate here. */

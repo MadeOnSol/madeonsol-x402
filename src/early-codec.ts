@@ -23,12 +23,13 @@ export function expandEarlyFrame(value: unknown): EarlyFrame {
   if (!['early:observed', 'early:outcome'].includes(frame.event ?? '')) return frame;
   if (frame.format === undefined || frame.format === 'full') return frame;
   if (frame.format !== 'compact-v1' || !frame.data || typeof frame.data !== 'object' || Array.isArray(frame.data)) throw new Error('invalid_compact_frame');
+  const input = frame.data as Record<string, unknown>;
   const data: Record<string, unknown> = {};
-  for (const k of Object.keys(frame.data)) {
+  for (const k of Object.keys(input)) {
     const key = k.startsWith('~') ? k.slice(1) : names.get(k);
     if (key === undefined || Object.hasOwn(data, key)) throw new Error('invalid_compact_frame');
-    if (key === '__proto__') Object.defineProperty(data, key, { value: frame.data[k], enumerable: true, writable: true, configurable: true });
-    else data[key] = frame.data[k];
+    if (key === '__proto__') Object.defineProperty(data, key, { value: input[k], enumerable: true, writable: true, configurable: true });
+    else data[key] = input[k];
   }
   const result: EarlyFrame = { ...frame, data }; delete result.format; return result;
 }

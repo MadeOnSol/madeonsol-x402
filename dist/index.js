@@ -883,6 +883,21 @@ export class MadeOnSolREST {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/locks`, undefined, params);
     }
     /**
+     * **Staged, not released**: answers HTTP 404 `token_intelligence_not_released`
+     * until the API activates it. Include-scoped token intelligence for terminal
+     * panels, `GET /tokens/{mint}/intelligence?include=...`. Name every module you
+     * render (no default; at most 5 modules and total cost 8; `holders` is opt-in
+     * only). Each module carries its own `status` (ready / partial_history /
+     * unverified / unavailable / timeout), the source's `as_of`, `provenance` and
+     * history coverage; one failing module never fails or zeroes another, and a
+     * non-ready module carries no `data`.
+     * **KEYED (v1) — requires an `msk_` API key; there is no x402 route.** PRO+ —
+     * BASIC receives HTTP 403.
+     */
+    async tokenIntelligence(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/intelligence`, undefined, { include: typeof params.include === "string" ? params.include : params.include.join(",") });
+    }
+    /**
      * v1.27 — Cross-token feed of NEW lock / vesting contracts, newest first —
      * who just locked tokens, of what mint, how much, until when — from Streamflow,
      * Jupiter Lock and Bonfida vesting. `GET /tokens/locks`. Each row is the same
