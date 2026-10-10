@@ -8,6 +8,14 @@ export { SolanaPaymentBudget, type SolanaPaymentPolicy, type SolanaPaymentPropos
 export { X402PaymentError, readPaidResult, x402RequestHash, recoveryMessage, paymentIdFromProof, classifyPaidResponse, PAYMENT_RECOVERY_HEADER, type PaidResultProvenance, type RecoveryOptions, } from "./x402-recovery.js";
 import type { KolFeedParams, KolFeedResponse, KolCoordinationParams, KolCoordinationResponse, KolLeaderboardParams, KolLeaderboardResponse, KolPairsParams, KolPairsResponse, KolTimingParams, KolTimingResponse, KolHotTokensParams, KolHotTokensResponse, KolEntryOrderParams, KolEntryOrderResponse, KolCompareParams, KolCompareResponse, KolAlertsParams, KolAlertsResponse, DeployerAlertsParams, DeployerAlertsResponse, DeployerTrajectoryResponse, DiscoveryResponse, CreateWebhookParams, UpdateWebhookParams, Webhook, WebhookWithSecret, WebhookDeliverySummary, UpdatedWebhook, WebhookDelivery, WebhookTestResult, WebhookTestOptions, StreamToken, StreamSessionsResponse, StreamSessionEvictResponse, AlphaLeaderboardParams, AlphaLeaderboardResponse, AlphaWalletResponse, AlphaLinkedResponse, TokenCapTableResponse, TokenBuyerQualityResponse, TokenRiskSingleResponse, TokenBatchRiskResponse, TokenBundleResponse, TokenPoolsResponse, TokenDepthParams, TokenDepthResponse, TokenHoldersResponse, TokenLocksParams, TokenLocksResponse, TokenLocksFeedParams, TokenLocksFeedResponse, TokenIntelligenceParams, TokenIntelligenceResponse, TokenUnlocksParams, TokenUnlocksResponse, TokenFeeSharesResponse, TokenFeeClaimsParams, TokenFeeClaimsResponse, TokenSurgesParams, TokenSurgesResponse, DeployerHistoryResponse, DeployerAsOfResponse, DeployerRewardsResponse, DeployerActivityResponse, DeployerActivityParams, DeployerStatsResponse, DeployerLeaderboardParams, DeployerLeaderboardResponse, DeployerProfileResponse, DeployerTokensParams, DeployerTokensResponse, DeployerAlertStatsParams, DeployerAlertStatsResponse, BestTokensParams, BestTokensResponse, RecentBondsParams, RecentBondsResponse, CandlesParams, CandlesResponse, TokenFlowParams, TokenFlowResponse, CopyTradeSubscription, CopyTradeCreateParams, CopyTradeCreateResponse, CopyTradeUpdateParams, CopyTradeUpdateResponse, CopyTradeRuleWarning, CopyTradeSignalsParams, CopyTradeSignalsResponse, CoordinationAlertRule, CoordinationAlertCreateParams, CoordinationAlertUpdateParams, CoordinationAlertListResponse, CoordinationAlertCreateResponse, FirstTouchesParams, FirstTouchesResponse, FirstTouchSubscription, FirstTouchSubscriptionCreateParams, FirstTouchSubscriptionUpdateParams, FirstTouchSubscriptionListResponse, FirstTouchSubscriptionCreateResponse, WalletTrackerListResponse, WalletTrackerAddResponse, WalletTrackerUpdateResponse, WalletTrackerTradesParams, WalletTrackerTradesResponse, WalletTrackerSummaryParams, WalletTrackerSummaryResponse, MeResponse, TokensListParams, TokensListResponse, AlmostBondedParams, AlmostBondedResponse, WalletStatsResponse, WalletPnlResponse, WalletPositionsResponse, WalletHoldingsParams, WalletHoldingsResponse, WalletTradesParams, WalletTradesResponse, PriceAlertCreateParams, PriceAlertUpdateParams, PriceAlertListResponse, PriceAlertCreateResponse, PriceAlertGetResponse, PriceAlertUpdateResponse, PriceAlertDeleteResponse, PriceAlertEventsParams, PriceAlertEventsResponse, ScoutLeaderboardParams, KolConsensusResponse, PeakHistoryResponse, CoordinationHistoryParams, TokenSnapshotResponse, SignalPerformanceResponse, SignalsCatalogResponse, WalletBatchClassifyResponse, TokenTradesParams, TokenTradesResponse, TokenTopTradersParams, TokenTopTradersResponse, SniperRecentParams, SniperRecentResponse, SniperByDeployerResponse } from "./types.js";
 import { MadeOnSolStream } from "./stream.js";
+import { type SolanaTerminalWatchOptions } from "./terminal.js";
+import type { TerminalTokenView as TerminalTokenViewType } from "./terminal-watch.js";
+export { createSolanaTerminalWatch, terminalStreamPort } from "./terminal.js";
+export { createTerminalTokenView, TerminalTokenView } from "./terminal-watch.js";
+export { planTerminalWatch, TERMINAL_MODULE_COSTS } from "./terminal-policy.js";
+export type { SolanaTerminalWatchOptions } from "./terminal.js";
+export type { TerminalView, TerminalViewOptions, TerminalStreamPort, TerminalStreamFrame, TerminalSnapshotResponse, TerminalModuleResponse, TerminalPhase } from "./terminal-watch.js";
+export type { TerminalModule, TerminalTier, TerminalWatchPlan } from "./terminal-policy.js";
 import type { StreamClientOptions } from "./stream.js";
 export { MadeOnSolStream, STREAM_CHANNELS } from "./stream.js";
 export type { StreamClientOptions, StreamChannel, StreamEventName, StreamEvent, StreamLifecycleEvent, StreamWarning, StreamCursor, StreamReplayResult, StreamGap, StreamFatal, StreamSubscription, StreamSubscribeOptions, } from "./stream.js";
@@ -605,8 +613,7 @@ export declare class MadeOnSolREST {
      */
     tokenLocks(mint: string, params?: TokenLocksParams): Promise<TokenLocksResponse>;
     /**
-     * **Staged, not released**: answers HTTP 404 `token_intelligence_not_released`
-     * until the API activates it. Include-scoped token intelligence for terminal
+     * Live since 2026-10-10. Include-scoped token intelligence for terminal
      * panels, `GET /tokens/{mint}/intelligence?include=...`. Name every module you
      * render (no default; at most 5 modules and total cost 8; `holders` is opt-in
      * only). Each module carries its own `status` (ready / partial_history /
@@ -617,6 +624,16 @@ export declare class MadeOnSolREST {
      * BASIC receives HTTP 403.
      */
     tokenIntelligence(mint: string, params: TokenIntelligenceParams): Promise<TokenIntelligenceResponse>;
+    /**
+     * Realtime terminal integration (opt-in, API key PRO+):
+     * A token-scoped REST intelligence snapshot + bounded WS invalidation.
+     *
+     * Reuse ONE shared stream across widgets, and use a UNIQUE subId per watch:
+     * `const stream = client.stream();`
+     * `const view = client.watchTokenIntelligence(token, { stream, subId: "panel1", tier: "PRO", include: ["snapshot", "risk"] });`
+     * `view.dispose();` detaches only this watch. Close the shared stream separately.
+     */
+    watchTokenIntelligence(mint: string, options: SolanaTerminalWatchOptions): TerminalTokenViewType;
     /**
      * v1.27 — Cross-token feed of NEW lock / vesting contracts, newest first —
      * who just locked tokens, of what mint, how much, until when — from Streamflow,

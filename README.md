@@ -470,6 +470,34 @@ const fresh = await rest.getStreamToken({ rotate: true }); // replace it; old va
 
 Stream tokens **never expire**: the same token comes back on every call until your subscription lapses or you rotate it. Send it as `Authorization: Bearer <token>` on the WebSocket handshake (`?token=` still works). A `4001` close means "mint again", never a timer.
 
+### Token intelligence: snapshot + WebSocket (SDK helper prepared, **not yet published**)
+
+Professional trading terminals should not poll the combined Intelligence REST endpoint every second. The upcoming `watchTokenIntelligence()` client helper uses our existing stream and an initial PRO+ keyed snapshot, then applies live price overlays and **coalesced, targeted** refreshes when suitable existing events arrive.
+
+```ts
+import { MadeOnSolREST } from "madeonsol-x402";
+
+const rest = new MadeOnSolREST({ apiKey: process.env.MADEONSOL_API_KEY! });
+const mint = process.env.SOLANA_MINT!;    // e.g. a supported memecoin mint
+const stream = rest.stream();             // ONE shared socket for your UI
+const widget = rest.watchTokenIntelligence(mint, {
+  stream, subId: "token_panel_1", tier: "PRO",
+  include: ["snapshot", "risk", "holder_count"], // 2 + 2 + 1 <= budget 8
+  onChange(view) {
+    console.log({ modules: view.snapshot?.modules, live: view.live.snapshot?.data,
+      stale: view.stale, incomplete: view.incomplete });
+    // Last complete holder_count census: check freshness and as_of;
+    // 'unavailable' / 'not_measured' does not mean 0 holders.
+  },
+});
+// On panel unmount: widget.dispose();  (only its named subscription)
+// After ALL panels close: stream.close();
+```
+
+A snapshot is not an event log. The bridge does **not** claim that missed trades, candles, KOL actions or reorgs can be recovered merely by re-fetching today's state. `view.incomplete` stays true across reconnect until the integrator verifies the missing event range and calls `widget.acknowledgeHistoricalRecovery()`. Some events are unscoped broadcasts: `includeKolBroadcast` must be explicitly enabled, with bandwidth considered. The Solana DEX firehose is a **separate ULTRA+ endpoint**, not implicitly opened here. Holder lists via `include=holders` remain excluded from this composite; `holder_count` is the stored last complete census and its automatic refresher is not scheduled. See `examples/terminal-intelligence-watch.mjs` in the repository for lifecycle handling.
+
+**Release status:** This SDK helper is currently source-only in [PR #536](https://github.com/MadeOnSol/madeonsol/pull/536); do not use it with the published npm version until its separate release is announced. The existing keyed `tokenIntelligence()` REST method already shipped in 4.2.0.
+
 ### Managed streaming client *(new in 1.10)*
 
 `rest.stream()` handles the token fetch (the token never expires — `getStreamToken()` is called on every (re)connect), auto-reconnect (backoff + jitter), heartbeat liveness, and typed events — just subscribe and listen.

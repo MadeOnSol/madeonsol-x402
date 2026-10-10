@@ -164,6 +164,14 @@ import type {
 } from "./types.js";
 
 import { MadeOnSolStream } from "./stream.js";
+import { createSolanaTerminalWatch, type SolanaTerminalWatchOptions } from "./terminal.js";
+import type { TerminalTokenView as TerminalTokenViewType } from "./terminal-watch.js";
+export { createSolanaTerminalWatch, terminalStreamPort } from "./terminal.js";
+export { createTerminalTokenView, TerminalTokenView } from "./terminal-watch.js";
+export { planTerminalWatch, TERMINAL_MODULE_COSTS } from "./terminal-policy.js";
+export type { SolanaTerminalWatchOptions } from "./terminal.js";
+export type { TerminalView, TerminalViewOptions, TerminalStreamPort, TerminalStreamFrame, TerminalSnapshotResponse, TerminalModuleResponse, TerminalPhase } from "./terminal-watch.js";
+export type { TerminalModule, TerminalTier, TerminalWatchPlan } from "./terminal-policy.js";
 import type { StreamClientOptions } from "./stream.js";
 import { VERSION } from "./version.js";
 
@@ -1573,8 +1581,7 @@ export class MadeOnSolREST {
   }
 
   /**
-   * **Staged, not released**: answers HTTP 404 `token_intelligence_not_released`
-   * until the API activates it. Include-scoped token intelligence for terminal
+   * Live since 2026-10-10. Include-scoped token intelligence for terminal
    * panels, `GET /tokens/{mint}/intelligence?include=...`. Name every module you
    * render (no default; at most 5 modules and total cost 8; `holders` is opt-in
    * only). Each module carries its own `status` (ready / partial_history /
@@ -1587,6 +1594,19 @@ export class MadeOnSolREST {
   async tokenIntelligence(mint: string, params: TokenIntelligenceParams): Promise<TokenIntelligenceResponse> {
     return this.request("GET", `/tokens/${encodeURIComponent(mint)}/intelligence`, undefined,
       { include: typeof params.include === "string" ? params.include : params.include.join(",") });
+  }
+
+  /**
+   * Realtime terminal integration (opt-in, API key PRO+):
+   * A token-scoped REST intelligence snapshot + bounded WS invalidation.
+   *
+   * Reuse ONE shared stream across widgets, and use a UNIQUE subId per watch:
+   * `const stream = client.stream();`
+   * `const view = client.watchTokenIntelligence(token, { stream, subId: "panel1", tier: "PRO", include: ["snapshot", "risk"] });`
+   * `view.dispose();` detaches only this watch. Close the shared stream separately.
+   */
+  watchTokenIntelligence(mint: string, options: SolanaTerminalWatchOptions): TerminalTokenViewType {
+    return createSolanaTerminalWatch(this, mint, options);
   }
 
   /**

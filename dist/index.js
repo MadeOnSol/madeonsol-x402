@@ -6,6 +6,10 @@ import { readPaidResult, x402PaymentErrorFrom } from "./x402-recovery.js";
 export { SolanaPaymentBudget } from "./solana-payment.js";
 export { X402PaymentError, readPaidResult, x402RequestHash, recoveryMessage, paymentIdFromProof, classifyPaidResponse, PAYMENT_RECOVERY_HEADER, } from "./x402-recovery.js";
 import { MadeOnSolStream } from "./stream.js";
+import { createSolanaTerminalWatch } from "./terminal.js";
+export { createSolanaTerminalWatch, terminalStreamPort } from "./terminal.js";
+export { createTerminalTokenView, TerminalTokenView } from "./terminal-watch.js";
+export { planTerminalWatch, TERMINAL_MODULE_COSTS } from "./terminal-policy.js";
 import { VERSION } from "./version.js";
 export { MadeOnSolStream, STREAM_CHANNELS } from "./stream.js";
 const DEFAULT_BASE_URL = "https://madeonsol.com";
@@ -883,8 +887,7 @@ export class MadeOnSolREST {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/locks`, undefined, params);
     }
     /**
-     * **Staged, not released**: answers HTTP 404 `token_intelligence_not_released`
-     * until the API activates it. Include-scoped token intelligence for terminal
+     * Live since 2026-10-10. Include-scoped token intelligence for terminal
      * panels, `GET /tokens/{mint}/intelligence?include=...`. Name every module you
      * render (no default; at most 5 modules and total cost 8; `holders` is opt-in
      * only). Each module carries its own `status` (ready / partial_history /
@@ -896,6 +899,18 @@ export class MadeOnSolREST {
      */
     async tokenIntelligence(mint, params) {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/intelligence`, undefined, { include: typeof params.include === "string" ? params.include : params.include.join(",") });
+    }
+    /**
+     * Realtime terminal integration (opt-in, API key PRO+):
+     * A token-scoped REST intelligence snapshot + bounded WS invalidation.
+     *
+     * Reuse ONE shared stream across widgets, and use a UNIQUE subId per watch:
+     * `const stream = client.stream();`
+     * `const view = client.watchTokenIntelligence(token, { stream, subId: "panel1", tier: "PRO", include: ["snapshot", "risk"] });`
+     * `view.dispose();` detaches only this watch. Close the shared stream separately.
+     */
+    watchTokenIntelligence(mint, options) {
+        return createSolanaTerminalWatch(this, mint, options);
     }
     /**
      * v1.27 — Cross-token feed of NEW lock / vesting contracts, newest first —

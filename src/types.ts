@@ -4097,7 +4097,7 @@ export interface TokenLocksSummary {
 
 /** Panels a terminal can ask for. There is no default set: name every module you render. */
 export type TokenIntelligenceModuleId =
-  | "snapshot" | "risk" | "buyer_quality" | "holders" | "flow" | "kol" | "locks" | "top_traders";
+  | "snapshot" | "risk" | "buyer_quality" | "holders" | "holder_count" | "flow" | "kol" | "locks" | "top_traders";
 
 /** Per-module outcome; a non-ready module never carries `data` (a failure is never a zero). */
 export type TokenIntelligenceModuleStatus = "ready" | "partial_history" | "unverified" | "unavailable" | "timeout";
@@ -4107,8 +4107,11 @@ export interface TokenIntelligenceParams {
   /**
    * Required. Modules as an array or a comma-separated string. Budget: at most
    * 5 modules and total cost 8 (snapshot 2, risk 2, buyer_quality 2, holders 3,
-   * flow 3, kol 1, locks 1, top_traders 2); over budget is HTTP 400
+   * holder_count 1, flow 3, kol 1, locks 1, top_traders 2); over budget is HTTP 400
    * `include_budget_exceeded` before any read. `holders` is opt-in only.
+   * `holder_count` (Solana) is the last complete holder census, stored: `ready`
+   * when fresh, `unverified` (`stale_measurement`) with the count and its
+   * `as_of` when older, `unavailable` (`not_measured`) when unknown (never 0).
    */
   include: readonly TokenIntelligenceModuleId[] | string;
 }
