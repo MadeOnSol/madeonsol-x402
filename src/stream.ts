@@ -41,7 +41,9 @@ export type StreamChannel =
   | "token:candles"           // PRO+, mint-scoped: REQUIRES filters.mints (own cap: PRO 25 / ULTRA 100 / BUSINESS 250), filters.updates adds the open minute
   | "token:risk"              // PRO+, mint-scoped: REQUIRES filters.mints — risk-INPUT changes + a risk:inputs snapshot on subscribe
   // PRO+, wallet-scoped: REQUIRES filters.wallets — deployer tier + KOL score-state changes
-  | "wallet:scores";
+  | "wallet:scores"
+  // PRO+, broadcast: every NEW coordinated buy cluster on any token, launch or later (optional filters.mints, min_wallets, min_new_wallets, phases, atomic_only)
+  | "token:bundles";
 
 /** Every Solana channel, in the server's order. */
 export const STREAM_CHANNELS: readonly StreamChannel[] = [
@@ -61,6 +63,7 @@ export const STREAM_CHANNELS: readonly StreamChannel[] = [
   "token:candles",
   "token:risk",
   "wallet:scores",
+  "token:bundles",
 ];
 
 /** Event names delivered on those channels (subscribe to a channel, receive these). */
@@ -95,7 +98,9 @@ export type StreamEventName =
   | "risk:supply_inflated"    // on token:risk (TokenRiskSupplyInflatedEvent)
   | "risk:inputs"             // on token:risk — snapshot frame (frame.snapshot === true), current stored inputs per mint
   | "deployer:tier_changed"   // on wallet:scores (DeployerTierChangedEvent)
-  | "kol:score_state_changed"; // on wallet:scores (KolScoreStateChangedEvent)
+  | "kol:score_state_changed" // on wallet:scores (KolScoreStateChangedEvent)
+  | "token:bundle_cluster"    // on token:bundles — one new coordinated buy cluster (TokenBundleClusterEvent)
+  | "token:bundle_exit";      // on token:bundles — that cluster's wallets sold 25/50/90/100 % of their cluster buy (TokenBundleExitEvent)
 
 // ── Shared stream core ──────────────────────────────────────────────────────
 // Everything below this line is IDENTICAL in the four TypeScript SDKs
@@ -486,6 +491,8 @@ function isThenable(v: unknown): v is PromiseLike<unknown> {
  * Fallback classification for servers that send no `retryable` flag: reasons
  * asking again can never fill.
  */
+/** Snapshot-then-update channels: a resume re-sends their state, so their `state_stream` gap is never a history gap. */
+const STATE_STREAM_CHANNELS = new Set(["token:prices", "rhc:token_prices"]);
 const PERMANENT_GAPS = new Set(["not_reconstructable", "state_stream", "window_exceeded", "ring_truncated", "instance_changed"]);
 /** The server's transient list — a channel with one of these is worth asking again. */
 const TRANSIENT_GAPS = new Set(["backpressure", "closed", "source_busy", "source_error", "late_ingest_possible", "row_cap"]);
@@ -1042,8 +1049,9 @@ export class MadeOnSolStream {
       const chs = end.channels;
       if (chs && typeof chs === "object") {
         for (const [ch, raw] of Object.entries(chs as Record<string, unknown>)) {
-          // token:prices is a state stream: the server re-sends a snapshot, never a log.
-          if (ch === "token:prices") continue;
+          // Price channels are state streams: the server re-sends a snapshot, never a log.
+          // Named subscriptions key them `<sub_id>/<channel>`, so strip the prefix first.
+          if (STATE_STREAM_CHANNELS.has(ch.slice(ch.lastIndexOf("/") + 1))) continue;
           const info = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
           const gap = info.gap;
           const late = info.late_ingest_possible === true;

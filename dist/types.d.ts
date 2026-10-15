@@ -1203,6 +1203,28 @@ export interface CapTableBuyer {
     first_sell_at?: string | null;
     /** first_sell_at == null (swap-ledger scoped: a plain transfer out still reads as holding). */
     still_holding?: boolean;
+    /** 2026-10, only with verify_current_balances=true (ULTRA+): the current balance of this mint. */
+    balance_now?: {
+        amount_raw: string;
+        decimals: number | null;
+        amount: string;
+        holding: boolean;
+        token_accounts: number;
+        slot: number;
+    };
+    /** 2026-10, only with verify_current_balances=true: the balance (unlike still_holding, the swap ledger). */
+    holding_status?: "verified_nonzero" | "verified_zero";
+    /** 2026-10, only with verify_current_balances=true: zero balance although no sell is on the swap ledger. */
+    exited_without_sell?: boolean;
+    /** 2026-10, only with include_scout_scores=true: KOL buyers' scout score as of first_buy_at (no hindsight); null for non-KOLs. */
+    scout_score?: {
+        as_of: string;
+        first_touches_30d: number;
+        avg_followers_4h: number | null;
+        swarm_3plus_pct: number | null;
+        swarm_5plus_pct: number | null;
+        scout_tier: "S" | "A" | "B" | "C" | null;
+    } | null;
     is_bundle: boolean;
     is_kol: boolean;
     kol_name: string | null;
@@ -1267,6 +1289,22 @@ export interface TokenCapTableResponse {
     /** v1.23.4 — trade-coverage disclosure (keyed route; absent on the x402 mirror and older cached responses). */
     coverage?: TradeCoverage;
     /** 2026-10 — whether early-buyer ranks 1..20 can be trusted (a recorded ingest gap overlapping launch→last ranked buy means a true early buyer may be missing). Absent on older responses. */
+    /** 2026-10, only with include_scout_scores=true. */
+    scout_scores_status?: "ok" | "unavailable" | "timeout" | "error";
+    scout_scores_note?: string;
+    /** 2026-10, only with verify_current_balances=true (ULTRA+), after every scored buyer was read. */
+    onchain_balance_verification?: {
+        source: string;
+        checked_at: string;
+        slot_min: number;
+        slot_max: number;
+        verified_wallets: number;
+        complete: boolean;
+        verified_still_holding: number;
+        verified_exited: number;
+        exited_without_sell: number;
+        note: string;
+    };
     ranks_completeness?: {
         ranks_complete: "observed_from_launch" | "gap_overlap" | "not_verified" | "no_ranks";
         rank_basis: "first_persisted_buys_at_or_above_floor";
@@ -1281,6 +1319,17 @@ export interface TokenCapTableResponse {
 }
 export interface TokenBuyerQualityResponse {
     mint: string;
+    /** 2026-10, REST only with include_balances=true (PRO+): the dump-cluster early buyers' CURRENT holdings; totals only when every member was read. */
+    dump_cluster_held_now?: {
+        cohort_size: number;
+        members: number;
+        held_now: Record<string, unknown>;
+        wallets: Array<{
+            wallet: string;
+            balance_now: Record<string, unknown> | null;
+        }>;
+        note: string;
+    };
     score: number;
     confidence: BuyerQualityConfidence;
     signal: BuyerQualitySignal;
@@ -1633,6 +1682,15 @@ export interface BundleWallet {
     win_rate?: number | null;
     bot_confidence?: string | null;
     tokens_held?: number;
+    /** 2026-10, only with include_balances=true: current balance of the mint; null when the cohort read failed. */
+    balance_now?: {
+        amount_raw: string;
+        decimals: number | null;
+        amount: string;
+        holding: boolean;
+        token_accounts: number;
+        slot: number;
+    } | null;
 }
 /**
  * Bundle-cohort holdings for a token. `held_pct_of_supply` (net held / circulating
@@ -1643,6 +1701,23 @@ export interface BundleWallet {
 export interface TokenBundleResponse {
     mint: string;
     bundle: BundleSummary;
+    /** 2026-10, only with include_balances=true (PRO+): balance-based held figures; totals only when complete. */
+    held_now?: {
+        source: "solana_rpc_getTokenAccountsByOwner";
+        checked_at: string;
+        wallets: number;
+        verified_wallets: number;
+        holding_wallets: number;
+        complete: boolean;
+        incomplete_reason: string | null;
+        slot_min: number | null;
+        slot_max: number | null;
+        tokens_held_raw: string | null;
+        tokens_held: string | null;
+        /** RATIO in [0, 1] of circulating_supply_raw. */
+        held_pct_of_supply: number | null;
+        supply_basis: "circulating_supply_raw" | null;
+    };
     wallets: BundleWallet[];
     /** v1.23.4 — trade-coverage disclosure (keyed route; absent on older cached responses). */
     coverage?: TradeCoverage;
@@ -2946,6 +3021,8 @@ export interface WalletTrade {
     market_price_usd: number | null;
     block_time: number;
     traded_at: string;
+    /** Exact on-chain amounts — see {@link TradeRawAmounts}. Present once exact amounts are enabled server-side. */
+    amounts?: TradeRawAmounts;
 }
 export interface WalletTradesResponse {
     /** Trade-data coverage disclosure. */
@@ -3020,6 +3097,25 @@ export interface TokenTrade {
     slot: number | null;
     block_time: number;
     traded_at: string;
+    /** Exact on-chain amounts — see {@link TradeRawAmounts}. Present once exact amounts are enabled server-side. */
+    amounts?: TradeRawAmounts;
+}
+/** Exact amounts of one Solana trade (#508). Integers are decimal STRINGS (u64
+ *  base units exceed the JS number range; parse with BigInt).
+ *  `raw_known: false` = a row stored before exact amounts existed: every field
+ *  is null = UNKNOWN, never 0. `sol_amount` / `token_amount` on the row keep their
+ *  meaning (gross SOL incl. fee/rent; 6-decimal rounded UI amount). */
+export interface TradeRawAmounts {
+    /** |net change of the traded mint|, base units (token_amount = token_raw / 10^token_decimals, exact). */
+    token_raw: string | null;
+    token_decimals: number | null;
+    /** Signed lamports (negative = paid), tx fee + token-account rent excluded; null unless SOL is the proven settlement. */
+    sol_net_lamports: string | null;
+    /** The one non-SOL token moved the other way (USDC, PUMP, an xStock …); quote and SOL both null = settlement unknown. */
+    quote_mint: string | null;
+    quote_raw: string | null;
+    quote_decimals: number | null;
+    raw_known: boolean;
 }
 /** Mint-scoped trade tape. `coverage` is the honesty block: the tape starts
  *  2026-04-12 (`history_start`, unix sec) and is pump.fun-pipeline scoped
@@ -3061,12 +3157,18 @@ export interface TokenTopTrader {
     sells: number;
     bought_sol: number;
     sold_sol: number;
+    /** Realized SOL PnL on the matched portion; cost basis per `cost_method`. */
     realized_pnl_sol: number;
-    unrealized_pnl_sol: number;
-    total_pnl_sol: number;
-    held_value_sol: number;
+    /** null when still holding a token we cannot price (never valued at 0). */
+    unrealized_pnl_sol: number | null;
+    total_pnl_sol: number | null;
+    held_value_sol: number | null;
     roi: number | null;
     still_holding: boolean;
+    /** FIFO only: tokens sold without an observed earlier buy (proceeds excluded from realized PnL). null under average_cost. */
+    unmatched_sell_tokens?: number | null;
+    /** FIFO only: every sold token matched an observed buy. null under average_cost. */
+    cost_basis_complete?: boolean | null;
     first_trade_at: string;
     last_trade_at: string;
     is_kol: boolean;
@@ -3081,6 +3183,9 @@ export interface TokenTopTradersResponse {
     mint: string;
     sort: "pnl" | "roi";
     window_days: number;
+    /** "fifo" = same cost basis as /wallet/{address}/pnl; "average_cost" = legacy fallback (overstates profit on unmatched sells). */
+    cost_method?: "fifo" | "average_cost";
+    cost_method_note?: string;
     traders: TokenTopTrader[];
     summary: {
         returned: number;
@@ -3468,7 +3573,10 @@ export interface SniperDeploy {
     deployer_runner_rate?: number | null;
     deployer_labeled_tokens?: number | null;
     confirmed_on_chain: boolean | null;
+    /** ShredPrism: FIRST observed successful confirmed-or-stronger outcome (observation time, not consensus time). Current status = confirmed_on_chain / execution_status. */
     confirmed_at: string | null;
+    /** ShredPrism: first observed successful finalized outcome; null for legacy deshred rows. */
+    finalized_at?: string | null;
     /** v1.21 — slot-window snipe rollup (slots [-1..+3]). Null until the ~10-min
      *  settle window has passed — absent, not zero. */
     footprint?: SniperFootprint | null;
@@ -3487,6 +3595,28 @@ export interface SniperRecentResponse {
     data_age_seconds: number | null;
     /** Present (true) only when watchlist=true and your watchlist is empty. */
     watchlist_empty?: boolean;
+    /** Which rows are still STORED per source (retention, not detection coverage). Nothing is
+     *  stored inside `gap`: legacy deshred ended at the 2026-10-06 switch; ShredPrism rows are deleted after 6 h. */
+    history?: SniperHistory;
+}
+export interface SniperHistory {
+    sources: Array<{
+        source: "deshred";
+        status: "retired";
+        newest_row_at: string;
+    } | {
+        source: "shredprism";
+        status: "live";
+        retention_hours: number;
+        retained_from: string;
+    }>;
+    gap: {
+        from: string;
+        to: string;
+    } | null;
+    source_switch_date: string;
+    confirmed_at_semantics: string;
+    note: string;
 }
 /** One DEX pool a token trades in. `is_active` distinguishes live vs parked venues. */
 export interface TokenPool {
@@ -3651,7 +3781,34 @@ export interface TokenDepthResponse {
     };
 }
 /** Wallet-intelligence labels on a holder. Empty = unknown to us, NOT verified clean. */
-export type TokenHolderLabel = "deployer" | "kol" | "early_buyer" | "buyer" | "bundle" | "bot" | "dump_cluster";
+/** sniper / bundler_wallet / dumper / alpha_tracked appear only with `include_wallet_flags=true`. Empty labels = unknown to us, not verified clean. */
+export type TokenHolderLabel = "deployer" | "kol" | "early_buyer" | "buyer" | "bundle" | "bot" | "dump_cluster" | "sniper" | "bundler_wallet" | "dumper" | "alpha_tracked";
+/** Per label: `evaluated: false` means insufficient evidence, NOT a verified negative. */
+export type WalletFlagLabelCoverage = Record<string, {
+    evaluated: boolean;
+    reason?: string;
+}>;
+/** Per-holder flags, only with `include_wallet_flags=true` (TR-07). Null when the flag sources were unavailable. */
+export interface TokenHolderWalletFlags {
+    is_sniper: boolean;
+    is_bundler: boolean;
+    is_dumper: boolean;
+    is_kol: boolean;
+    is_alpha_tracked: boolean;
+    is_bot_high_confidence: boolean;
+    label_coverage: WalletFlagLabelCoverage;
+}
+/** Top-level flag status, only with `include_wallet_flags=true`. */
+export interface WalletFlagsMeta {
+    status: "available" | "partial" | "unavailable";
+    rule_version?: string;
+    note?: string;
+    [key: string]: unknown;
+}
+export interface TokenHoldersParams {
+    /** Opt in to per-holder `wallet_flags` + `wallet_flags_meta` (PRO+, tier-disclosed rows only). */
+    include_wallet_flags?: boolean;
+}
 /** One ranked holder (owner wallet, token accounts merged). */
 export interface TokenHolder {
     rank: number;
@@ -3670,6 +3827,8 @@ export interface TokenHolder {
     early_buyer_rank: number | null;
     bot_confidence: "none" | "low" | "medium" | "high" | null;
     historical_win_rate: number | null;
+    /** Only with `include_wallet_flags=true`; null when the flag sources were unavailable. */
+    wallet_flags?: TokenHolderWalletFlags | null;
 }
 /**
  * An owner EXCLUDED from the circulating denominator, named where we can:
@@ -3700,6 +3859,10 @@ export interface TokenHoldersConcentration {
     token_accounts_nonzero: number | null;
     /** Raw u64 as STRINGS. */
     supply_raw: string | null;
+    /** Where supply_raw came from: the mint account read in this request (normal), the cache, or getTokenSupply. null when withheld. */
+    supply_source?: "mint_account" | "token_prices_cache" | "rpc_token_supply" | null;
+    /** false = no supply consistent with the disclosed balances; every percentage is then null. */
+    supply_consistent?: boolean;
     circulating_raw: string | null;
     decimals: number | null;
     /** Shares over the circulating denominator (supply minus excluded). top50/top100 are null on the top-20 fallback. */
@@ -3767,6 +3930,8 @@ export interface TokenHoldersResponse {
         census_fallback_reason: string | null;
         note: string;
     };
+    /** Only with `include_wallet_flags=true`. */
+    wallet_flags_meta?: WalletFlagsMeta;
 }
 /** Locker program a contract lives under. LP locks are NOT covered (token / vesting locks only). */
 /** smithii_vesting / sablier_lockup are served only while listed in the response's meta.programs (verified admission). */
@@ -5512,6 +5677,26 @@ export interface DeployerTokensParams {
     offset?: number;
     /** true = only tokens that graduated (bonded_at set); total / has_more count the bonded set. */
     only_bonded?: boolean;
+    /** Opt in to `launches_24h` (distinct launches observed in our index over a rolling UTC 24 h window). */
+    include_launches_24h?: boolean;
+}
+/**
+ * Launches observed in OUR index over a rolling UTC 24 h window (TR-03).
+ * Indexed observations only, not a chain-complete count. `count` is null
+ * (never 0) unless `status` is `observed`.
+ */
+export interface DeployerLaunches24h {
+    window_start: string;
+    window_end: string;
+    count: number | null;
+    status: "observed" | "source_unavailable" | "over_budget" | "source_incomplete" | "untracked_deployer";
+    completeness: "indexed_observations_only";
+    provenance?: string;
+    row_cap_per_source?: number;
+    source_rows?: {
+        bonded?: number;
+        pending?: number;
+    };
 }
 /** `GET /deployer-hunter/{wallet}/tokens` — newest bond first. */
 export interface DeployerTokensResponse {
@@ -5525,6 +5710,8 @@ export interface DeployerTokensResponse {
     offset: number;
     has_more: boolean;
     coverage?: LaunchCoverage;
+    /** Present only with `include_launches_24h=true`. */
+    launches_24h?: DeployerLaunches24h;
 }
 export interface DeployerAlertStatsParams {
     /** Lookback window, e.g. `24h`, `7d`, `30d`. */
@@ -5651,5 +5838,79 @@ export interface RecentBondsResponse extends FreeTierDelayMeta {
     limit: number;
     /** Pass back as `since` to fetch only newer bonds. */
     next_since?: string | null;
+}
+/** Filters for the `token:bundles` channel (all optional, AND-combined; invalid values reject the channel). */
+export interface TokenBundlesFilters {
+    /** Only these mints (at most 250). */
+    mints?: string[];
+    /** Minimum distinct buyers in the cluster (3-50, count at detection). */
+    min_wallets?: number;
+    /** Minimum buyers new to the token (3-50). */
+    min_new_wallets?: number;
+    /** launch = within 5 minutes of the token's first sighting. */
+    phases?: Array<"launch" | "later" | "unknown">;
+    /** Only clusters where one transaction carried 3+ of the buyers. */
+    atomic_only?: boolean;
+    /** Only these event types (default both). */
+    bundle_events?: Array<"token:bundle_cluster" | "token:bundle_exit">;
+}
+/**
+ * `token:bundle_cluster` on WS `token:bundles` (PRO+): one NEW coordinated buy
+ * cluster on a Solana token, launch or later: one slot where >= 3 wallets
+ * bought and >= 3 of them had never bought the token before. Only stored buys
+ * count (0.05 SOL / $3.50 persistence floor). `wallet_count` is the count at
+ * detection; a cluster is announced once. Evidence, not a verdict. For the
+ * share of supply these wallets hold now call `tokenBundleShare()`.
+ */
+export interface TokenBundleClusterEvent {
+    /** bundle_cluster_events row id (dedupe key). */
+    id: number;
+    chain: "solana";
+    mint: string;
+    slot: number;
+    /** First buy of the cluster (ISO). */
+    at: string;
+    minutes_after_launch: number | null;
+    phase: "launch" | "later" | "unknown";
+    launch_at: string | null;
+    wallet_count: number;
+    new_wallets: number;
+    /** Transactions carrying 3+ of the buyers (definitively coordinated). */
+    atomic_txs: number;
+    sol_volume: number | null;
+    token_volume: number | null;
+    /** Up to 50 buyer wallets. */
+    wallets: string[];
+    /** When bundle-watch detected it (ISO). */
+    detected_at: string;
+}
+/**
+ * `token:bundle_exit` on WS `token:bundles` (PRO+): an announced cluster's
+ * wallets have sold `threshold_pct` (25 / 50 / 90 / 100) % of what they bought
+ * IN the cluster, each threshold once. Carries the cluster's own fields, so the
+ * channel filters apply alike. Only sells by the bundle wallets themselves,
+ * followed for 7 days after detection; first 50 wallets of a larger cluster.
+ */
+export interface TokenBundleExitEvent extends Omit<TokenBundleClusterEvent, "sol_volume" | "token_volume" | "wallets"> {
+    cluster_id: number;
+    cluster_detected_at: string | null;
+    threshold_pct: 25 | 50 | 90 | 100;
+    wallets_tracked: number;
+    wallets_sold: number;
+    /** Wallets that sold at least 99 % of their cluster buy. */
+    wallets_exited: number;
+    bought_tokens: number;
+    sold_tokens: number;
+    /** sum over wallets of min(sold, bought) / bought, 0..1. */
+    sold_pct: number | null;
+    realized_sol: number;
+    last_sell_at: string | null;
+    recent_sells: Array<{
+        wallet: string;
+        tx_signature: string;
+        tokens: number | null;
+        sol: number | null;
+        at: string;
+    }>;
 }
 //# sourceMappingURL=types.d.ts.map

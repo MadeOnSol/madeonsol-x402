@@ -59,6 +59,7 @@ import type {
   TokenDepthParams,
   TokenDepthResponse,
   TokenHoldersResponse,
+  TokenHoldersParams,
   TokenLocksParams,
   TokenLocksResponse,
   TokenLocksFeedParams,
@@ -170,7 +171,7 @@ export { createSolanaTerminalWatch, terminalStreamPort } from "./terminal.js";
 export { createTerminalTokenView, TerminalTokenView } from "./terminal-watch.js";
 export { planTerminalWatch, TERMINAL_MODULE_COSTS } from "./terminal-policy.js";
 export type { SolanaTerminalWatchOptions } from "./terminal.js";
-export type { TerminalView, TerminalViewOptions, TerminalStreamPort, TerminalStreamFrame, TerminalSnapshotResponse, TerminalModuleResponse, TerminalPhase } from "./terminal-watch.js";
+export type { TerminalView, TerminalViewOptions, TerminalStreamPort, TerminalStreamFrame, TerminalSnapshotResponse, TerminalModuleResponse, TerminalPhase, TerminalContinuityStatus, TerminalContinuity } from "./terminal-watch.js";
 export type { TerminalModule, TerminalTier, TerminalWatchPlan } from "./terminal-policy.js";
 import type { StreamClientOptions } from "./stream.js";
 import { VERSION } from "./version.js";
@@ -303,6 +304,11 @@ export type {
   TokenHolderExcluded,
   TokenHoldersConcentration,
   TokenHoldersResponse,
+  TokenHoldersParams,
+  TokenHolderWalletFlags,
+  WalletFlagsMeta,
+  WalletFlagLabelCoverage,
+  DeployerLaunches24h,
   TokenLockProgram,
   TokenLockKind,
   TokenLockStatus,
@@ -360,6 +366,9 @@ export type {
   DeployerTierChangedEvent,
   KolScoreState,
   KolScoreStateChangedEvent,
+  TokenBundlesFilters,
+  TokenBundleClusterEvent,
+  TokenBundleExitEvent,
   WalletScoreEvent,
   TokenFeeEventType,
   TokenFeeShareEntry,
@@ -1140,6 +1149,15 @@ export class MadeOnSolREST {
     return this.request("GET", `/kol/tokens/${encodeURIComponent(mint)}/entry-order`, undefined, params as Record<string, string | number | undefined>);
   }
 
+  /**
+   * Every stored KOL trade on one token, newest first (keyset paged with
+   * next_cursor). BASIC: 5-minute delay, 20 rows. Trades below the KOL
+   * persistence floor are not stored. GET /kol/tokens/{mint}/trades
+   */
+  async kolTokenTrades(mint: string, params?: { limit?: number; action?: "buy" | "sell"; kol?: string; since?: string; cursor?: string }): Promise<unknown> {
+    return this.request("GET", `/kol/tokens/${encodeURIComponent(mint)}/trades`, undefined, params as Record<string, string | number | undefined>);
+  }
+
   /** Side-by-side comparison of 2-5 KOL wallets. PRO+ adds overlap tokens (30d). */
   async kolCompareWallets(params: KolCompareParams): Promise<KolCompareResponse> {
     return this.request("GET", "/kol/compare", undefined, { wallets: params.wallets.join(",") });
@@ -1445,13 +1463,13 @@ export class MadeOnSolREST {
   /* ── Token quality ── */
 
   /** First non-deployer early buyers for a token, enriched with PnL/KOL/bot flags. PRO=10, ULTRA=20. */
-  async tokenCapTable(mint: string): Promise<TokenCapTableResponse> {
-    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/cap-table`);
+  async tokenCapTable(mint: string, params?: { limit?: number; /** ULTRA+: every early buyer's current balance, all or 503 */ verify_current_balances?: boolean; /** KOL buyers' scout score as of their first buy */ include_scout_scores?: boolean }): Promise<TokenCapTableResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/cap-table`, undefined, params as Record<string, string | number | undefined>);
   }
 
   /** 0–100 buyer-quality score for a token's first-buyer cohort. 5-min cached. */
-  async tokenBuyerQuality(mint: string): Promise<TokenBuyerQualityResponse> {
-    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/buyer-quality`);
+  async tokenBuyerQuality(mint: string, params?: { /** PRO+: dump_cluster_held_now from current balances */ include_balances?: boolean }): Promise<TokenBuyerQualityResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/buyer-quality`, undefined, params as Record<string, string | number | undefined>);
   }
 
   /**
@@ -1484,8 +1502,18 @@ export class MadeOnSolREST {
    * returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`,
    * `bot_confidence`, `tokens_held`). All tiers reach it.
    */
-  async tokenBundle(mint: string): Promise<TokenBundleResponse> {
-    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle`);
+  /** ONE figure: share of supply held now by all bundle wallets (launch ∪ clusters), cached 30 s (PRO+). GET /tokens/{mint}/bundle-share */
+  async tokenBundleShare(mint: string, params?: { window?: "1h" | "6h" | "24h"; min_wallets?: number }): Promise<unknown> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle-share`, undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /** Every coordinated buy cluster on a token in a window, launch AND later (PRO+). GET /tokens/{mint}/bundles */
+  async tokenBundleClusters(mint: string, params?: { window?: "1h" | "6h" | "24h"; min_wallets?: number; limit?: number; include_balances?: boolean }): Promise<unknown> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundles`, undefined, params as Record<string, string | number | undefined>);
+  }
+
+  async tokenBundle(mint: string, params?: { /** PRO+: held_now from current balances */ include_balances?: boolean }): Promise<TokenBundleResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle`, undefined, params as Record<string, string | number | undefined>);
   }
 
   /**
@@ -1551,8 +1579,8 @@ export class MadeOnSolREST {
    * `holder_rpc_unavailable` (retry 15 s) = fail-closed. **KEYED (v1) — requires an
    * `msk_` API key; there is no x402 route.** PRO+ — BASIC receives HTTP 403.
    */
-  async tokenHolders(mint: string): Promise<TokenHoldersResponse> {
-    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/holders`);
+  async tokenHolders(mint: string, params?: TokenHoldersParams): Promise<TokenHoldersResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/holders`, undefined, params as Record<string, string | number | undefined>);
   }
 
   /**

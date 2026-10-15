@@ -36,10 +36,23 @@ export class TerminalTokenView {
     incomplete = false;
     /** An observed historical gap survives a new REST snapshot and reconnect. */
     gapUnresolved = false;
+    /** A named subscription ACK never proves that its resume finished. */
+    replayPending = false;
+    replayUnverified = false;
+    replayComplete = false;
+    continuityStatus = "initial";
+    lastDisconnectedAt = null;
+    lastReplayAt = null;
     lastError = null;
     snapshot = null;
+    /**
+     * Modules not yet successfully re-read since the latest ACK/disconnect. A
+     * replay_end or a targeted refresh of ONE module must not report "live"
+     * while another module still shows its pre-disconnect REST value.
+     */
+    baselineMissing = new Set();
     constructor(options) {
-        if (!/^[A-Za-z0-9_.-]{1,64}$/.test(options.subId) || options.subId === "default") {
+        if (typeof options.subId !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/.test(options.subId) || options.subId === "default") {
             throw new Error("named_sub_id_required");
         }
         const n = options.minModuleRefreshMs ?? 15_000;
@@ -50,8 +63,10 @@ export class TerminalTokenView {
         this.plan = planTerminalWatch(options);
         this.opts = options;
         this.now = options.now ?? Date.now;
-        for (const m of this.plan.include)
+        for (const m of this.plan.include) {
             this.gen.set(m, 0);
+            this.baselineMissing.add(m);
+        }
     }
     getView() {
         return {
@@ -62,6 +77,12 @@ export class TerminalTokenView {
             no_push: [...this.plan.modules_without_push],
             incomplete: this.incomplete,
             last_error: this.lastError,
+            continuity: {
+                status: this.continuityStatus,
+                last_disconnected_at_ms: this.lastDisconnectedAt,
+                last_replay_at_ms: this.lastReplayAt,
+                this_subscription_replay_complete: this.replayComplete,
+            },
         };
     }
     /** Registers handlers BEFORE opening the stream; first REST read waits for ACK. */
@@ -71,18 +92,33 @@ export class TerminalTokenView {
         this.phase = this.plan.channels.length ? "awaiting_subscribe" : "bootstrapping";
         this.emit();
         if (!this.plan.channels.length) {
+            this.continuityStatus = "snapshot_only";
             void this.fetchModules(this.plan.include, true);
             return;
         }
         this.listen("*", (data, frame) => this.onFrame(frame));
         this.listen(ACK_SUBSCRIBE, (_channels, ack) => this.onSubscribed(ack));
+        // The shared managed stream emits one aggregate "replay" when ALL named
+        // subscriptions have ended. Inspect ends[sub_id], NOT the aggregate complete
+        // flag: another terminal panel's successful replay cannot certify ours.
+        this.listen("replay", result => this.onReplay(result));
         this.listen("close", () => {
             if (this.phase === "stopped")
                 return;
-            // A fetch launched on the old socket can no longer be trusted.
+            // A fetch launched on the old socket can no longer be trusted. In
+            // particular, neither a new ACK nor REST first paint proves that lost
+            // historical events were replayed across the disconnection.
             this.epoch++;
             this.pendingBootstrap = false;
             this.subscribed = false;
+            this.replayPending = true;
+            this.replayUnverified = true;
+            this.replayComplete = false;
+            this.lastDisconnectedAt = this.now();
+            this.continuityStatus = this.gapUnresolved ? "historical_gap" : "replay_pending";
+            this.lastError = this.gapUnresolved ? "stream_gap" : "stream_disconnected";
+            this.clearLive(); // old price ticks must not masquerade as live prices
+            this.requireBaseline();
             this.incomplete = true;
             this.phase = "awaiting_subscribe";
             this.markStale(this.plan.include);
@@ -92,7 +128,15 @@ export class TerminalTokenView {
         this.listen("warning", (warn) => this.onWarning(warn));
         this.listen("gap", (gap) => this.onGap(gap));
         this.listen("fatal", () => {
+            this.epoch++;
+            this.pendingBootstrap = false;
             this.subscribed = false;
+            this.replayPending = false;
+            this.replayUnverified = true;
+            this.replayComplete = false;
+            this.continuityStatus = this.gapUnresolved ? "historical_gap" : "replay_unverified";
+            this.lastError = this.gapUnresolved ? "stream_gap" : "stream_fatal";
+            this.clearLive();
             this.incomplete = true;
             this.phase = "degraded";
             this.markStale(this.plan.include);
@@ -119,13 +163,18 @@ export class TerminalTokenView {
      * BEFORE clearing the visible gap. A fresh snapshot is not that evidence.
      */
     acknowledgeHistoricalRecovery() {
-        if (!this.gapUnresolved || this.phase === "stopped")
+        if ((!this.gapUnresolved && !this.replayUnverified && !this.replayPending) ||
+            this.phase === "stopped" || this.phase === "idle")
             return;
+        // The integrator is claiming it independently verified the lost window.
+        // Do NOT call the SDK's acceptGap() here or move an SDK cursor.
         this.gapUnresolved = false;
+        this.replayPending = false;
+        this.replayUnverified = false;
+        this.continuityStatus = this.subscribed ? "externally_reconciled" : "replay_unverified";
         this.incomplete = !this.subscribed;
-        if (this.lastError === "stream_gap")
-            this.lastError = null;
-        if (!this.incomplete && this.snapshot)
+        this.lastError = this.incomplete ? "stream_disconnected" : null;
+        if (!this.incomplete && this.snapshot && this.baselineMissing.size === 0)
             this.phase = "live";
         this.emit();
     }
@@ -145,6 +194,24 @@ export class TerminalTokenView {
         this.emit();
     }
     isStopped() { return this.phase === "stopped"; }
+    requireBaseline() {
+        for (const m of this.plan.include)
+            this.baselineMissing.add(m);
+    }
+    /** Phase after a continuity change; never "live" on a partial baseline. */
+    settledPhase() {
+        if (this.busy && this.phase === "bootstrapping")
+            return "bootstrapping";
+        if (this.incomplete)
+            return "degraded";
+        if (!this.snapshot || this.baselineMissing.size > 0)
+            return this.busy ? "bootstrapping" : "degraded";
+        return "live";
+    }
+    clearLive() {
+        for (const m of Object.keys(this.live))
+            delete this.live[m];
+    }
     // A throwing UI callback must never leave the controller half-updated.
     emit() { try {
         this.opts.onChange?.(this.getView());
@@ -173,12 +240,18 @@ export class TerminalTokenView {
         this.subscribed = true;
         // Re-ACK proves a live subscription again, not that old trade events
         // reported missing by the SDK have been reconstructed.
-        this.incomplete = this.gapUnresolved;
-        this.lastError = this.gapUnresolved ? "stream_gap" : null;
+        this.incomplete = this.gapUnresolved || this.replayPending || this.replayUnverified;
+        this.continuityStatus = this.gapUnresolved ? "historical_gap"
+            : this.replayPending ? "replay_pending"
+                : this.replayUnverified ? "replay_unverified" : this.continuityStatus;
+        this.lastError = this.gapUnresolved ? "stream_gap"
+            : this.replayPending ? "replay_pending"
+                : this.replayUnverified ? "replay_unverified" : null;
         this.clearTimer();
         // A re-subscribe after reconnect ALWAYS re-reads a bounded snapshot. We
         // cannot compare clocks from REST and WS as one total-order watermark.
         this.phase = "bootstrapping";
+        this.requireBaseline();
         this.pendingBootstrap = true;
         for (const m of this.plan.include)
             this.dirty.add(m);
@@ -187,6 +260,37 @@ export class TerminalTokenView {
             this.pendingBootstrap = false;
             void this.fetchModules(this.plan.include, true);
         }
+    }
+    /**
+     * A successful SDK aggregate replay is relevant only when its per-subscribe
+     * replay_end for OUR named subscription says complete=true. REST freshness
+     * alone cannot certify recovered KOL/trade/risk events.
+     */
+    onReplay(value) {
+        if (!this.subscribed || this.isStopped() || !value || typeof value !== "object")
+            return;
+        const r = value;
+        const ends = r.ends;
+        if (!ends || typeof ends !== "object" || Array.isArray(ends) ||
+            !Object.prototype.hasOwnProperty.call(ends, this.opts.subId))
+            return;
+        const own = ends[this.opts.subId];
+        if (!own || typeof own !== "object" || Array.isArray(own))
+            return;
+        const complete = own.complete === true;
+        this.replayPending = false;
+        this.replayUnverified = !complete;
+        this.replayComplete = complete;
+        if (complete)
+            this.lastReplayAt = this.now();
+        this.incomplete = this.gapUnresolved || !complete;
+        this.continuityStatus = this.gapUnresolved ? "historical_gap"
+            : complete ? "replay_complete" : "replay_unverified";
+        this.lastError = this.gapUnresolved ? "stream_gap" : complete ? null : "replay_unverified";
+        // A replay proof does not replace a post-ACK HTTP read; remain bootstrapping
+        // until the read has actually landed, and degraded if that read failed.
+        this.phase = this.settledPhase();
+        this.emit();
     }
     onWarning(value) {
         if (!value || typeof value !== "object" || this.phase === "stopped")
@@ -203,6 +307,11 @@ export class TerminalTokenView {
             this.epoch++;
             this.pendingBootstrap = false;
             this.subscribed = false;
+            this.replayPending = false;
+            this.replayUnverified = true;
+            this.replayComplete = false;
+            this.continuityStatus = this.gapUnresolved ? "historical_gap" : "replay_unverified";
+            this.clearLive();
             this.incomplete = true;
             this.lastError = String(w.code);
             this.phase = "degraded";
@@ -216,10 +325,25 @@ export class TerminalTokenView {
             return;
         const gap = value;
         const entries = gap.channels && typeof gap.channels === "object" ? Object.keys(gap.channels) : [];
-        const belongs = entries.length === 0 || entries.some(ch => ch.startsWith(this.opts.subId + "/") || (ch === this.opts.subId));
+        // The managed SDK emits aggregate gaps. A gap with no channel detail may
+        // belong ONLY to another named subscription. If our own replay_end
+        // explicitly says complete:true, do not poison this panel with a sibling's
+        // error. With missing own proof, fail conservatively and keep it visible.
+        const ends = (gap.replay && typeof gap.replay === "object" &&
+            gap.replay.ends);
+        const own = ends && Object.prototype.hasOwnProperty.call(ends, this.opts.subId)
+            ? ends[this.opts.subId] : null;
+        const ownComplete = !!own && typeof own === "object" &&
+            own.complete === true;
+        const ownIncomplete = !!own && typeof own === "object" &&
+            own.complete === false;
+        const channelBelongs = entries.some(ch => ch.startsWith(this.opts.subId + "/") || ch === this.opts.subId);
+        const belongs = channelBelongs || ownIncomplete || (entries.length === 0 && !ownComplete);
         if (!belongs)
             return;
         this.gapUnresolved = true;
+        this.clearLive();
+        this.continuityStatus = "historical_gap";
         this.incomplete = true;
         this.lastError = "stream_gap";
         this.phase = "degraded";
@@ -238,7 +362,8 @@ export class TerminalTokenView {
         this.emit();
     }
     onFrame(frame) {
-        if (!frame || this.phase === "stopped" || frame.sub_id !== this.opts.subId)
+        if (!frame || !this.subscribed || this.phase === "stopped" ||
+            frame.sub_id !== this.opts.subId)
             return;
         const matches = rulesForEvent(frame, this.plan);
         if (!matches.length)
@@ -267,6 +392,11 @@ export class TerminalTokenView {
             else {
                 this.markStale([rule.module]);
                 this.dirty.add(rule.module);
+                // A failed post-ACK read is never retried on its own; the next
+                // invalidation carries the missing baseline modules with it.
+                if (!this.busy)
+                    for (const m of this.baselineMissing)
+                        this.dirty.add(m);
                 // Only an INVALIDATION may make an in-flight read stale. An overlay tick
                 // supersedes the REST price on screen; counting it would re-read the
                 // snapshot module after every read on any actively traded token.
@@ -371,13 +501,18 @@ export class TerminalTokenView {
                 ? { ...incoming, modules: { ...this.snapshot.modules, ...incoming.modules } }
                 : incoming;
             for (const m of modules) {
+                this.baselineMissing.delete(m);
                 if ((this.gen.get(m) ?? 0) === seen.get(m))
                     this.stale.delete(m);
                 else
                     this.dirty.add(m);
             }
-            this.lastError = null;
-            this.phase = this.incomplete ? "degraded" : "live";
+            // HTTP first paint is never a proof of socket replay or missing history.
+            this.lastError = this.gapUnresolved ? "stream_gap"
+                : this.replayPending ? "replay_pending"
+                    : this.replayUnverified ? "replay_unverified"
+                        : this.baselineMissing.size ? "snapshot_refresh_pending" : null;
+            this.phase = this.incomplete || this.baselineMissing.size ? "degraded" : "live";
         }
         catch (error) {
             if (this.isStopped() || epoch !== this.epoch)

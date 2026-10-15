@@ -16,6 +16,7 @@ export const STREAM_CHANNELS = [
     "token:candles",
     "token:risk",
     "wallet:scores",
+    "token:bundles",
 ];
 async function resolveWebSocket(override) {
     if (override)
@@ -54,6 +55,8 @@ function isThenable(v) {
  * Fallback classification for servers that send no `retryable` flag: reasons
  * asking again can never fill.
  */
+/** Snapshot-then-update channels: a resume re-sends their state, so their `state_stream` gap is never a history gap. */
+const STATE_STREAM_CHANNELS = new Set(["token:prices", "rhc:token_prices"]);
 const PERMANENT_GAPS = new Set(["not_reconstructable", "state_stream", "window_exceeded", "ring_truncated", "instance_changed"]);
 /** The server's transient list — a channel with one of these is worth asking again. */
 const TRANSIENT_GAPS = new Set(["backpressure", "closed", "source_busy", "source_error", "late_ingest_possible", "row_cap"]);
@@ -711,8 +714,9 @@ export class MadeOnSolStream {
             const chs = end.channels;
             if (chs && typeof chs === "object") {
                 for (const [ch, raw] of Object.entries(chs)) {
-                    // token:prices is a state stream: the server re-sends a snapshot, never a log.
-                    if (ch === "token:prices")
+                    // Price channels are state streams: the server re-sends a snapshot, never a log.
+                    // Named subscriptions key them `<sub_id>/<channel>`, so strip the prefix first.
+                    if (STATE_STREAM_CHANNELS.has(ch.slice(ch.lastIndexOf("/") + 1)))
                         continue;
                     const info = (raw && typeof raw === "object" ? raw : {});
                     const gap = info.gap;

@@ -43,6 +43,21 @@ export interface TerminalSnapshotResponse {
     modules: Partial<Record<TerminalModule, TerminalModuleResponse>>;
 }
 export type TerminalPhase = "idle" | "awaiting_subscribe" | "bootstrapping" | "live" | "degraded" | "stopped";
+/**
+ * Stream delivery truth only: "replay_complete" establishes what the SDK
+ * replayed for THIS subscription, not full market/trade/archive coverage.
+ * "initial" means no reconnect has needed proof during this widget's life.
+ */
+export type TerminalContinuityStatus = "initial" | "snapshot_only" | "replay_pending" | "replay_complete" | "replay_unverified" | "historical_gap" | "externally_reconciled";
+export interface TerminalContinuity {
+    status: TerminalContinuityStatus;
+    /** Client monotonic/now() time at the latest socket close, if any. */
+    last_disconnected_at_ms: number | null;
+    /** Client receipt time for a completed replay of THIS named subscription. */
+    last_replay_at_ms: number | null;
+    /** An SDK replay ending for another widget is not proof for this one. */
+    this_subscription_replay_complete: boolean;
+}
 export interface TerminalView {
     phase: TerminalPhase;
     address: string;
@@ -57,6 +72,8 @@ export interface TerminalView {
     /** A stream interruption or refusal must be visible to the terminal. */
     incomplete: boolean;
     last_error: string | null;
+    /** Reconnect/replay diagnostics; never a historical coverage certification. */
+    continuity: TerminalContinuity;
 }
 export interface TerminalViewOptions {
     chain: TerminalChain;
@@ -103,8 +120,21 @@ export declare class TerminalTokenView {
     private incomplete;
     /** An observed historical gap survives a new REST snapshot and reconnect. */
     private gapUnresolved;
+    /** A named subscription ACK never proves that its resume finished. */
+    private replayPending;
+    private replayUnverified;
+    private replayComplete;
+    private continuityStatus;
+    private lastDisconnectedAt;
+    private lastReplayAt;
     private lastError;
     private snapshot;
+    /**
+     * Modules not yet successfully re-read since the latest ACK/disconnect. A
+     * replay_end or a targeted refresh of ONE module must not report "live"
+     * while another module still shows its pre-disconnect REST value.
+     */
+    private readonly baselineMissing;
     constructor(options: TerminalViewOptions);
     getView(): TerminalView;
     /** Registers handlers BEFORE opening the stream; first REST read waits for ACK. */
@@ -118,9 +148,19 @@ export declare class TerminalTokenView {
     acknowledgeHistoricalRecovery(): void;
     dispose(): void;
     private isStopped;
+    private requireBaseline;
+    /** Phase after a continuity change; never "live" on a partial baseline. */
+    private settledPhase;
+    private clearLive;
     private emit;
     private listen;
     private onSubscribed;
+    /**
+     * A successful SDK aggregate replay is relevant only when its per-subscribe
+     * replay_end for OUR named subscription says complete=true. REST freshness
+     * alone cannot certify recovered KOL/trade/risk events.
+     */
+    private onReplay;
     private onWarning;
     private onGap;
     private onFrame;

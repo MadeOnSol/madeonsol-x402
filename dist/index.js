@@ -485,6 +485,14 @@ export class MadeOnSolREST {
     async kolTokenEntryOrder(mint, params) {
         return this.request("GET", `/kol/tokens/${encodeURIComponent(mint)}/entry-order`, undefined, params);
     }
+    /**
+     * Every stored KOL trade on one token, newest first (keyset paged with
+     * next_cursor). BASIC: 5-minute delay, 20 rows. Trades below the KOL
+     * persistence floor are not stored. GET /kol/tokens/{mint}/trades
+     */
+    async kolTokenTrades(mint, params) {
+        return this.request("GET", `/kol/tokens/${encodeURIComponent(mint)}/trades`, undefined, params);
+    }
     /** Side-by-side comparison of 2-5 KOL wallets. PRO+ adds overlap tokens (30d). */
     async kolCompareWallets(params) {
         return this.request("GET", "/kol/compare", undefined, { wallets: params.wallets.join(",") });
@@ -761,12 +769,12 @@ export class MadeOnSolREST {
     }
     /* ── Token quality ── */
     /** First non-deployer early buyers for a token, enriched with PnL/KOL/bot flags. PRO=10, ULTRA=20. */
-    async tokenCapTable(mint) {
-        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/cap-table`);
+    async tokenCapTable(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/cap-table`, undefined, params);
     }
     /** 0–100 buyer-quality score for a token's first-buyer cohort. 5-min cached. */
-    async tokenBuyerQuality(mint) {
-        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/buyer-quality`);
+    async tokenBuyerQuality(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/buyer-quality`, undefined, params);
     }
     /**
      * Transparent 0–100 token risk score (higher = riskier): risk evidence for your own policy, not a verdict. Returns a
@@ -797,8 +805,16 @@ export class MadeOnSolREST {
      * returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`,
      * `bot_confidence`, `tokens_held`). All tiers reach it.
      */
-    async tokenBundle(mint) {
-        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle`);
+    /** ONE figure: share of supply held now by all bundle wallets (launch ∪ clusters), cached 30 s (PRO+). GET /tokens/{mint}/bundle-share */
+    async tokenBundleShare(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle-share`, undefined, params);
+    }
+    /** Every coordinated buy cluster on a token in a window, launch AND later (PRO+). GET /tokens/{mint}/bundles */
+    async tokenBundleClusters(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundles`, undefined, params);
+    }
+    async tokenBundle(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle`, undefined, params);
     }
     /**
      * Per-venue liquidity map — every DEX pool a token trades in, live vs parked,
@@ -860,8 +876,8 @@ export class MadeOnSolREST {
      * `holder_rpc_unavailable` (retry 15 s) = fail-closed. **KEYED (v1) — requires an
      * `msk_` API key; there is no x402 route.** PRO+ — BASIC receives HTTP 403.
      */
-    async tokenHolders(mint) {
-        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/holders`);
+    async tokenHolders(mint, params) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/holders`, undefined, params);
     }
     /**
      * v1.27 — Token locks & vesting on a mint: every on-chain Streamflow stream,
