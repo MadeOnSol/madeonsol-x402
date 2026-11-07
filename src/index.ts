@@ -55,6 +55,7 @@ import type {
   TokenRiskSingleResponse,
   TokenBatchRiskResponse,
   TokenBundleResponse,
+  TokenInsiderFlowResponse,
   TokenPoolsResponse,
   TokenDepthParams,
   TokenDepthResponse,
@@ -289,6 +290,10 @@ export type {
   BundleSummary,
   BundleWallet,
   TokenBundleResponse,
+  TokenInsiderFlowResponse,
+  InsiderFlowWindow,
+  InsiderFlowCohort,
+  InsiderFlowNullReason,
   TokenPool,
   TokenPoolsSummary,
   TokenPoolsResponse,
@@ -484,6 +489,9 @@ export type {
   WalletFlags,
   WalletStatsResponse,
   WalletTopToken,
+  RealizedPnlCompleteness,
+  RealizedPnlIncompleteReason,
+  RealizedStatus,
   WalletTradingStyle,
   WalletDeployerTierEntry,
   WalletDeployerBreakdown,
@@ -544,6 +552,8 @@ export type {
   WalletBatchClassifyResponse,
   TokenTradesParams,
   TokenTrade,
+  TradeRawAmounts,
+  TradeEventFacts,
   TokenTradesResponse,
   TokenTopTradersParams,
   TokenTopTrader,
@@ -1502,6 +1512,11 @@ export class MadeOnSolREST {
    * returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`,
    * `bot_confidence`, `tokens_held`). All tiers reach it.
    */
+  /** Insider sell pressure: net selling by creator, early buyers, bundlers and KOLs over 5 and 15 minutes, vs buy volume and liquidity (PRO+). Unproven amounts are null with a reason, never 0. GET /tokens/{mint}/insider-flow */
+  async tokenInsiderFlow(mint: string): Promise<TokenInsiderFlowResponse> {
+    return this.request("GET", `/tokens/${encodeURIComponent(mint)}/insider-flow`);
+  }
+
   /** ONE figure: share of supply held now by all bundle wallets (launch ∪ clusters), cached 30 s (PRO+). GET /tokens/{mint}/bundle-share */
   async tokenBundleShare(mint: string, params?: { window?: "1h" | "6h" | "24h"; min_wallets?: number }): Promise<unknown> {
     return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle-share`, undefined, params as Record<string, string | number | undefined>);

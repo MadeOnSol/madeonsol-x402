@@ -805,6 +805,10 @@ export class MadeOnSolREST {
      * returns the full cohort plus per-wallet identity (`kol_name`, `win_rate`,
      * `bot_confidence`, `tokens_held`). All tiers reach it.
      */
+    /** Insider sell pressure: net selling by creator, early buyers, bundlers and KOLs over 5 and 15 minutes, vs buy volume and liquidity (PRO+). Unproven amounts are null with a reason, never 0. GET /tokens/{mint}/insider-flow */
+    async tokenInsiderFlow(mint) {
+        return this.request("GET", `/tokens/${encodeURIComponent(mint)}/insider-flow`);
+    }
     /** ONE figure: share of supply held now by all bundle wallets (launch ∪ clusters), cached 30 s (PRO+). GET /tokens/{mint}/bundle-share */
     async tokenBundleShare(mint, params) {
         return this.request("GET", `/tokens/${encodeURIComponent(mint)}/bundle-share`, undefined, params);

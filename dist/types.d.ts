@@ -6,7 +6,9 @@ export interface KolTrade {
     token_name: string | null;
     token_symbol: string | null;
     action: "buy" | "sell";
-    sol_amount: number;
+    /** SOL size of the trade. `null` on a sell whose SOL proceeds are unknown (they went to
+     *  another wallet or cannot be proven; since 2026-10-18). The sell still happened. Never read null as 0. */
+    sol_amount: number | null;
     token_amount: number;
     /** Token market cap in USD at the moment of trade (real-time, sourced from
      *  our in-memory price tracker — not the Dexscreener spot which lags). */
@@ -423,7 +425,20 @@ export interface FirstTouchSubscriptionCreateResponse {
  * below are REST-only. (The x402 route still sends deprecated wallet_address / pnl_sol /
  * total_buy_sol / total_sell_sol aliases until 2026-11-03; they are not typed.)
  */
-export interface KolLeaderboardEntry {
+/**
+ * Migration 512 — realized-PnL completeness of a KOL. A KOL sell whose SOL proceeds went to another
+ * wallet (or cannot be proven) still reduces holdings, but its position is left out of PnL, win rate,
+ * ROI and rankings (never booked as 0 proceeds or a loss). Same vocabulary as /wallet/{address}/pnl.
+ */
+export interface KolPnlCompletenessFields {
+    completeness?: "complete" | "incomplete";
+    incomplete_reasons?: Array<"proceeds_unattributed">;
+    /** Positions excluded from realized PnL / win rate / ROI because a sell's proceeds are unknown. */
+    unknown_realizations?: number;
+    /** KOL sells with unknown proceeds (sol_amount null) in the window. */
+    unknown_proceeds_sells?: number;
+}
+export interface KolLeaderboardEntry extends KolPnlCompletenessFields {
     wallet: string;
     name: string;
     /** Realized (cost-basis) PnL in SOL, 6 decimals. */
@@ -433,6 +448,20 @@ export interface KolLeaderboardEntry {
     buy_count: number;
     sell_count: number;
     win_rate: number | null;
+    /** Migration 526 (TR-14): present when win_rate is the full-history FIFO win rate (same number as the KOL profile). */
+    win_rate_method?: "fifo_full_history" | "unavailable";
+    /** not_computed_for_period: FIFO covers 7d / 30d only; other periods serve win_rate null. */
+    win_rate_status?: "available" | "partial" | "insufficient_sample" | "no_known_positions" | "no_closed_positions" | "unavailable" | "not_computed_for_period";
+    win_rate_window?: "7d" | "30d" | null;
+    win_rate_rule_version?: string | null;
+    /** Win-rate denominator (known closed positions) for win_rate_window. */
+    closed_positions_known?: number | null;
+    /** Closed positions with an unproven realization: never a win or loss, not in the denominator. */
+    unknown_realizations_winrate?: number | null;
+    win_rate_computed_at?: string | null;
+    /** classifier_076 = roster classifier; otherwise the auto tag and its method. */
+    strategy_tag_source?: "classifier_076" | "fifo_auto_v2" | "in_window_auto_512" | null;
+    auto_strategy_tag_source?: "fifo_auto_v2" | "in_window_auto_512";
     /** v1.12 — median hold time in minutes over the last 30 days. */
     median_hold_minutes_30d?: number | null;
     /** v1.12 — percentile rank (0-100) of early entry quality over the last 30 days. */
@@ -796,6 +825,10 @@ export interface HotToken {
     total_buy_sol: number;
     total_sell_sol: number;
     net_flow: number;
+    /** Sells with unknown proceeds left out of total_sell_sol / net flow (never counted as 0 SOL); null = not measured. */
+    unknown_proceeds_sells?: number | null;
+    /** false when unknown_proceeds_sells > 0; null = not measured. */
+    sell_sol_complete?: boolean | null;
     first_kol_buy_at?: string | null;
     first_kol_buy_age_minutes: number | null;
     /** Last KOL buy in the period (REST). */
@@ -967,7 +1000,7 @@ export interface KolEntryOrderParams {
     limit?: number;
 }
 /** One requested wallet. `found: false` (not an active KOL) carries only `wallet` + `found`. */
-export interface KolCompareProfile {
+export interface KolCompareProfile extends KolPnlCompletenessFields {
     wallet: string;
     found: boolean;
     name?: string;
@@ -994,7 +1027,37 @@ export interface KolCompareProfile {
     percentile_pnl_30d?: number | null;
     percentile_winrate_30d?: number | null;
     percentile_early_entry_30d?: number | null;
+    /** Migration 512 — 7-day positions excluded from the 7-day PnL metrics (unknown proceeds). Under migration 526 (winrate_method present): the FIFO 7-day unknown realizations; the PnL counter moves to pnl_unknown_realizations_7d. */
+    unknown_realizations_7d?: number;
+    /** Migration 526 (TR-14): present once the FIFO win rate is served. Absent = the in-window method. */
+    winrate_method?: "fifo_full_history" | "unavailable";
+    /** Status of winrate_30d. */
+    winrate_status?: KolWinrateStatus;
+    winrate_status_7d?: KolWinrateStatus;
+    winrate_status_30d?: KolWinrateStatus;
+    /** Minimum known closed positions before a win rate is published. */
+    winrate_min_known?: number;
+    winrate_rule_version?: string | null;
+    winrate_definition?: string;
+    /** Win-rate denominator: completed buy lots whose realization is proven. */
+    closed_positions_known_7d?: number;
+    closed_positions_known_30d?: number;
+    /** All completed buy lots in the window: known + unknown realizations. */
+    closed_positions_all_7d?: number;
+    closed_positions_all_30d?: number;
+    /** Closed positions with an unproven realization: never a win or loss, not in the denominator. */
+    unknown_realizations_30d?: number;
+    /** Migration 526: the in-window 7-day PnL counter (positions excluded from pnl_7d for unknown proceeds). */
+    pnl_unknown_realizations_7d?: number;
+    /** opening_inventory_unproven / consideration_unknown / closure_unproven (KOL_WINRATE_SOURCE=fifo only). */
+    unknown_by_reason_30d?: Record<string, number> | null;
+    winrate_computed_at?: string | null;
+    /** classifier_076 = roster classifier; otherwise the auto tag and its method. */
+    strategy_tag_source?: "classifier_076" | "fifo_auto_v2" | "in_window_auto_512" | null;
+    auto_strategy_tag_source?: "fifo_auto_v2" | "in_window_auto_512";
 }
+/** Migration 526 (TR-14) win-rate status vocabulary. */
+export type KolWinrateStatus = "available" | "partial" | "insufficient_sample" | "no_known_positions" | "no_closed_positions" | "unavailable";
 export interface KolCompareOverlapToken {
     token_mint: string;
     token_symbol: string | null;
@@ -1119,6 +1182,10 @@ export interface AlphaLeaderboardEntry {
     /** v1.24 — null (not 0) when the entry-MC aggregate failed. */
     entry_mc_samples?: number | null;
     avg_entry_mc_usd?: number | null;
+    /** 2026-10 (migration 511) — early-buyer pairs whose realization is unknown (a sell whose proceeds went to another wallet); excluded from win_rate, net_pnl_sol and roi. null before migration 511. */
+    unknown_realizations?: number | null;
+    /** 2026-10 (migration 511) — SOL bought on those pairs, left out of net_pnl_sol and roi. */
+    unknown_cost_basis_sol?: number | null;
 }
 export interface AlphaLeaderboardResponse {
     /** Launch-pipeline scope disclosure (absent ≠ clean). */
@@ -1153,18 +1220,28 @@ export interface AlphaWalletSummary {
     last_seen: string;
     bot_confidence: "low" | "medium" | "high" | "none";
     bot_signals: string[];
+    /** 2026-10 (migration 511) — early-buyer pairs whose realization is unknown (a sell whose proceeds went to another wallet); excluded from win_rate, net_pnl_sol and roi. null before migration 511. */
+    unknown_realizations?: number | null;
+    /** 2026-10 (migration 511) — SOL bought on those pairs, left out of net_pnl_sol and roi. */
+    unknown_cost_basis_sol?: number | null;
 }
 export interface AlphaWalletToken {
     token_mint: string;
     rank: number;
-    first_buy_sol: number;
+    /** null = the first buy's SOL consideration is unknown (never reported as 0). */
+    first_buy_sol: number | null;
+    /** "unknown_consideration" exactly when first_buy_sol is null. */
+    first_buy_sol_status: "measured" | "unknown_consideration";
     first_buy_at: string;
-    total_sol_bought: number;
+    /** null when first_buy_sol is null (the first buy's cost is unknown), never the priced buys alone or 0. */
+    total_sol_bought: number | null;
     total_sol_sold: number;
-    realized_pnl_sol: number;
+    /** 2026-10 (migration 508) — null when the realization is unknown (a sell whose proceeds went to another wallet, price_status proceeds_unattributed); never reported as 0. */
+    realized_pnl_sol: number | null;
     buy_count: number;
     sell_count: number;
-    result: "win" | "loss" | "open";
+    /** 2026-10 (migration 508) — "unknown" when realized_pnl_sol is null: neither a win nor a loss. */
+    result: "win" | "loss" | "open" | "unknown";
 }
 export interface AlphaWalletResponse {
     /** Launch-pipeline scope disclosure (absent ≠ clean). */
@@ -1193,8 +1270,11 @@ export type BuyerQualitySignal = "positive" | "neutral" | "negative";
 export interface CapTableBuyer {
     rank: number;
     wallet: string;
-    first_buy_sol: number;
-    first_buy_at: string;
+    /** null = the first buy's SOL consideration is unknown (never reported as 0). */
+    first_buy_sol: number | null;
+    /** "unknown_consideration" exactly when first_buy_sol is null. */
+    first_buy_sol_status: "measured" | "unknown_consideration";
+    first_buy_at: string | null;
     /** Realized PnL on this token from confirmed swaps; null when unknown. */
     realized_pnl_sol?: number | null;
     total_sol_bought?: number | null;
@@ -1592,6 +1672,16 @@ export interface Candle {
     close_liquidity_usd?: number | null;
     high_mc_usd?: number | null;
     low_mc_usd?: number | null;
+    /** Known data-quality issue for this candle (2026-10-27); null = no known issue. OHLCV is never altered. */
+    quality?: CandleQuality | null;
+}
+/** Per-candle data-quality status. On rolled-up timeframes the worst status of the 1-minute buckets inside. */
+export interface CandleQuality {
+    status: "contaminated_proven" | "contaminated_suspected" | "unknown";
+    /** Machine-readable cause, e.g. "clmm_v2_create_as_swap". */
+    reason: string;
+    /** 1-minute buckets inside this candle that are listed. */
+    flagged_minutes: number;
 }
 /** 1-minute-derived OHLC candles for a token. PRO/ULTRA only. */
 export interface CandlesResponse {
@@ -1603,6 +1693,8 @@ export interface CandlesResponse {
     /** True when ULTRA net-flow/liquidity fields are populated on each candle. */
     net_flow_included: boolean;
     candles: Candle[];
+    /** false = the quality lookup failed, so a null candle quality means not checked (2026-10-27). */
+    quality_checked?: boolean;
     /** true = the page budget ran out before `limit` candles or `from` was reached; covered_from is then the oldest instant actually searched. */
     truncated?: boolean;
     covered_from?: string;
@@ -1691,6 +1783,87 @@ export interface BundleWallet {
         token_accounts: number;
         slot: number;
     } | null;
+}
+export type InsiderFlowNullReason = "unpriced_trades" | "firehose_gap" | "gap_state_unverified" | "not_captured" | "capture_unverified" | "no_buy_volume" | "buy_volume_incomplete" | "liquidity_unknown" | "liquidity_stale" | "sol_price_unavailable";
+/** One cohort (or the deduplicated `insiders` union) in one window. Every amount is null when the window is `not_captured`. */
+export interface InsiderFlowCohort {
+    wallets_trading: number | null;
+    wallets_selling: number | null;
+    buy_trades: number | null;
+    sell_trades: number | null;
+    /** Proven SOL spent on buys; unpriced trades are excluded and counted in unpriced_trades. */
+    buy_sol: number | null;
+    sell_sol: number | null;
+    sell_tokens: number | null;
+    unpriced_trades: number | null;
+    amounts: "complete" | "partial" | null;
+    /** sell_sol - buy_sol (positive = net selling); null when amounts are partial or the window overlaps a capture gap. */
+    net_sell_sol: number | null;
+    net_sell_usd: number | null;
+    /** PERCENT of every proven buy in the window. */
+    net_sell_pct_of_buy_volume: number | null;
+    /** PERCENT of the token liquidity in USD. */
+    net_sell_pct_of_liquidity: number | null;
+    null_reasons: Partial<Record<"net_sell_sol" | "net_sell_usd" | "net_sell_pct_of_buy_volume" | "net_sell_pct_of_liquidity", InsiderFlowNullReason>>;
+}
+export interface InsiderFlowWindow {
+    from: string;
+    to: string;
+    seconds: number;
+    status: "ok" | "no_trades" | "gap_overlap" | "gap_unverified" | "not_captured" | "capture_unverified";
+    market: {
+        buy_trades: number | null;
+        sell_trades: number | null;
+        buy_sol: number | null;
+        sell_sol: number | null;
+        unpriced_trades: number | null;
+    };
+    insiders: InsiderFlowCohort;
+    by_cohort: {
+        creator?: InsiderFlowCohort;
+        early_buyers?: InsiderFlowCohort;
+        bundlers?: InsiderFlowCohort;
+        kols?: InsiderFlowCohort;
+    };
+}
+/** GET /tokens/{mint}/insider-flow (PRO+): net selling by creator, early buyers, bundlers and KOLs over 5 and 15 minutes. */
+export interface TokenInsiderFlowResponse {
+    mint: string;
+    as_of: string;
+    rule_version: string;
+    time_basis: "ingest_clock";
+    windows: Record<string, InsiderFlowWindow>;
+    cohorts: {
+        creator?: {
+            status: "known" | "platform_signer" | "not_recorded";
+            wallet?: string | null;
+        };
+        early_buyers?: {
+            status: "recorded" | "not_recorded";
+            wallets?: number;
+        };
+        bundlers?: {
+            status: "detected" | "none_detected" | "not_measured";
+            wallets?: number;
+        };
+        kols?: {
+            status: "matched_on_trades";
+            note?: string;
+        };
+    };
+    completeness: Record<string, unknown>;
+    liquidity: {
+        liquidity_usd?: number | null;
+        updated_at?: string | null;
+        status?: "ok" | "unknown" | "stale" | "no_primary_pool";
+    };
+    sol_usd: {
+        price?: number | null;
+        source?: string;
+        status?: "ok" | "unavailable";
+    };
+    coverage: Record<string, unknown>;
+    note: string;
 }
 /**
  * Bundle-cohort holdings for a token. `held_pct_of_supply` (net held / circulating
@@ -2175,6 +2348,10 @@ export interface KolConsensus {
     net_flow_sol: number;
     total_buy_sol: number;
     total_sell_sol: number;
+    /** Sells with unknown proceeds left out of total_sell_sol / net flow (never counted as 0 SOL); null = not measured. */
+    unknown_proceeds_sells?: number | null;
+    /** false when unknown_proceeds_sells > 0; null = not measured. */
+    sell_sol_complete?: boolean | null;
     first_kol_buy_at: string | null;
     last_kol_buy_at: string | null;
     first_touch_wallet: string | null;
@@ -2253,6 +2430,8 @@ export interface TokenSnapshot {
     price_sol: number | null;
     vwap_price_usd?: number | null;
     vwap_price_sol?: number | null;
+    /** Why the VWAP fields are null, or "ok" (2026-10-15): an implausible VWAP is withheld, never served. */
+    vwap_status?: "ok" | "unavailable" | "no_price_reference" | "implausible_vs_price";
     market_cap: number | null;
     fdv_usd: number | null;
     liquidity_usd: number | null;
@@ -2676,7 +2855,20 @@ export interface WalletStats {
     sold_sol: number;
     unique_tokens: number;
     window_days: number;
+    /** 2026-10 (migration 508) — cost basis consumed by sells whose proceeds went to another wallet. Not in realized PnL or ROI (neither a loss nor a gain). 0 when complete. Absent on older servers. */
+    unknown_realized_cost_basis_sol?: number;
+    /** 2026-10 (migration 508) — sells with price_status proceeds_unattributed. Absent on older servers. */
+    unattributed_sells?: number;
 }
+/**
+ * 2026-10 (migration 508) — realized-PnL completeness. NOT the same field as
+ * `coverage.completeness` (source-coverage verification, `"not_verified"`):
+ * this one says whether realized PnL / ROI include every sell's proceeds.
+ */
+export type RealizedPnlCompleteness = "complete" | "incomplete";
+export type RealizedPnlIncompleteReason = "proceeds_unattributed" | "unknown_consideration" | "missing_cost_basis";
+/** known = no unattributed sell; partial = some; unknown = every sell unattributed (outcome unknown, not a loss). */
+export type RealizedStatus = "known" | "partial" | "unknown";
 /** Rolling dump-cluster stats for a wallet (trailing 42 days, refreshed daily).
  *  A "dump cohort" is a first-20 buyer appearance on a token that peaked <15min
  *  after deploy. `null` on the parent means no cohort record for the wallet. */
@@ -2756,10 +2948,15 @@ export interface WalletTopToken {
     sells: number;
     sol_in: number;
     sol_out: number;
+    /** Known basis only (migration 508): unattributed sells are excluded, see unknown_realized_cost_basis_sol. */
     realized_pnl_sol: number;
     current_mc_usd: number | null;
     peak_mc_usd: number | null;
     last_traded_at: string;
+    /** 2026-10 (migration 508). Absent on older servers. */
+    unknown_realized_cost_basis_sol?: number;
+    unattributed_sells?: number;
+    realized_status?: RealizedStatus;
 }
 export interface WalletTradingStyle {
     total_trades: number;
@@ -2790,9 +2987,14 @@ export interface WalletRecentTrade {
     tx_signature: string;
 }
 export interface WalletStatsResponse {
-    /** Trade-data coverage disclosure. */
+    /** Trade-data coverage disclosure (its `completeness` is source coverage, not realized PnL). */
     coverage?: TradeCoverage;
     address: string;
+    /** 2026-10 (migration 508) — realized-PnL completeness over stats + top_tokens. Absent on older servers. */
+    completeness?: RealizedPnlCompleteness;
+    incomplete_reasons?: RealizedPnlIncompleteReason[];
+    /** 2026-10 — fixed sentence: realized PnL and ROI cover the known basis only. */
+    pnl_basis_note?: string;
     stats: WalletStats | null;
     flags: WalletFlags;
     top_tokens?: WalletTopToken[];
@@ -2821,6 +3023,10 @@ export interface WalletPnlSummary {
     total_pnl_sol: number;
     total_bought_sol: number;
     total_sold_sol: number;
+    /** 2026-10 (migration 508) — cost basis of FIFO lots consumed by disposals whose realization is unknown (proceeds_unattributed sells). Not in realized_sol: neither a loss nor a gain. 0 when complete. Absent on analyses cached before the field existed. */
+    unknown_realized_cost_basis_sol?: number;
+    /** Migration 516 (not yet enabled): proven single-event SOL tips inside the basis / proceeds above; tips shared by 2+ trades of one tx are in notes.unallocated_tx_costs. */
+    tips_sol?: number;
     wins: number;
     losses: number;
     win_rate: number | null;
@@ -2855,15 +3061,21 @@ export interface WalletClosedPosition {
     pnl_sol: number;
     roi_pct: number | null;
     hold_minutes: number | null;
-    result: "win" | "loss" | "breakeven";
+    /** 2026-10 (migration 508) — "unknown": at least one disposal's realization is unknown; not a win, not a loss, not in win_rate / profit_factor; sorted after the known positions. */
+    result: "win" | "loss" | "breakeven" | "unknown";
+    /** 2026-10 (migration 508) — known | partial (pnl_sol is the known part) | unknown. Absent on analyses cached before the field existed. */
+    realized_status?: "known" | "partial" | "unknown";
+    /** 2026-10 (migration 508) — basis of the lots consumed by unknown disposals of this token; not in pnl_sol. */
+    unknown_realized_cost_basis_sol?: number;
     first_trade: string | null;
     last_trade: string | null;
 }
 export interface WalletOpenPosition {
     token_mint: string;
     token_amount: number;
-    cost_basis_sol: number;
-    avg_entry_price_sol: number;
+    /** null when cost_basis_status is unknown. */
+    cost_basis_sol: number | null;
+    avg_entry_price_sol: number | null;
     current_price_sol: number | null;
     current_value_sol: number | null;
     unrealized_sol: number | null;
@@ -2874,8 +3086,9 @@ export interface WalletOpenPosition {
     position_basis?: "swap_derived";
     holding_status?: "verified" | "unverified";
     holding_unverified_reason?: "not_checked" | "no_fresh_snapshot" | "snapshot_unreadable" | "snapshot_older_than_trades" | "decimals_mismatch" | "balance_invalid" | null;
-    /** partial = a verified balance exceeds the trade position; the excess arrived without a swap and has no cost basis. */
-    cost_basis_status?: "known" | "partial";
+    /** partial = a verified balance exceeds the trade position; the excess arrived without a swap and has no cost basis.
+     *  unknown = part of the position was bought with unknown consideration: cost_basis_sol / avg_entry_price_sol / unrealized_* are null. */
+    cost_basis_status?: "known" | "partial" | "unknown";
     /** Present (non-null) only when holding_status = verified. */
     holding?: WalletPositionHolding | null;
 }
@@ -2885,10 +3098,10 @@ export interface WalletPositionHolding {
     onchain_balance: number;
     held_known_amount: number;
     external_inflow_amount: number;
-    cost_basis_held_sol: number;
+    cost_basis_held_sol: number | null;
     unrealized_known_sol: number | null;
     /** Cost of FIFO lots no longer in the wallet. Outcome unknown: neither realized nor unrealized. */
-    cost_basis_not_held_sol: number;
+    cost_basis_not_held_sol: number | null;
     verified_at: string;
     source: "wallet_holdings_cache";
 }
@@ -2908,6 +3121,9 @@ export interface WalletHoldingCheck {
 export interface WalletPnlResponse {
     address: string;
     window_days: number;
+    /** 2026-10 (migration 508) — "incomplete" when at least one disposal's realized PnL is unknown (a sell whose proceeds went to another wallet, price_status proceeds_unattributed; or unknown consideration). Lots are consumed (holdings right), the realization is excluded from realized_sol / win_rate / best-worst, never booked as 0 proceeds. Absent on analyses cached before the field existed. */
+    completeness?: "complete" | "incomplete";
+    incomplete_reasons?: Array<"proceeds_unattributed" | "unknown_consideration" | "missing_cost_basis">;
     summary: WalletPnlSummary;
     pnl_curve: WalletPnlCurvePoint[];
     closed_positions: WalletClosedPosition[];
@@ -2924,6 +3140,16 @@ export interface WalletPnlResponse {
         sells_without_cost_basis?: {
             tokens: number;
             cost_basis: "unknown";
+        }; /** 2026-10 (migration 508) — disposals whose realization is unknown; their basis is excluded from every realized figure. */
+        unknown_realizations?: {
+            proceeds_unattributed_sells: number;
+            tokens: number;
+            unknown_realized_cost_basis_sol: number;
+            realized_pnl: "excluded";
+        }; /** Migration 516 (not yet enabled): SOL tips in no basis and no realized PnL (shared by 2+ trades of one tx, never split; or on a trade with unknown realization). */
+        unallocated_tx_costs?: {
+            count: number;
+            sol: number;
         };
     };
     /** 2026-10 (COV-21) — proven-holding check summary. Absent on older responses. */
@@ -2940,6 +3166,12 @@ export interface WalletPnlResponse {
 }
 export interface WalletPositionsResponse {
     address: string;
+    /** 2026-10 (migration 508) — realized-PnL completeness of the wallet, same values as /pnl (NOT coverage.completeness). Absent on older servers. */
+    completeness?: RealizedPnlCompleteness;
+    incomplete_reasons?: RealizedPnlIncompleteReason[];
+    summary?: {
+        unknown_realized_cost_basis_sol: number;
+    };
     positions: WalletOpenPosition[];
     /** 2026-10 (COV-21) — proven-holding check summary. Absent on older responses. */
     holding_check?: WalletHoldingCheck;
@@ -3008,7 +3240,10 @@ export interface WalletTrade {
     tx_signature: string;
     token_mint: string;
     action: "buy" | "sell";
-    sol_amount: number;
+    /** SOL moved by this trade. `null` = the SOL consideration is unproven
+     *  (`event.price_status` "quote_unpriced" or "proceeds_unattributed"); `0` = a measured zero.
+     *  Since 2026-10-28 an unproven amount is never served as 0. */
+    sol_amount: number | null;
     token_amount: number;
     /** This trade's executed price — `sol_amount / token_amount`. Added 2026-08-16;
      *  this route returned amounts and no price before. See {@link TokenTrade}. */
@@ -3023,6 +3258,8 @@ export interface WalletTrade {
     traded_at: string;
     /** Exact on-chain amounts — see {@link TradeRawAmounts}. Present once exact amounts are enabled server-side. */
     amounts?: TradeRawAmounts;
+    /** Event identity + attribution labels — see {@link TradeEventFacts}. Present once event reads are enabled server-side. */
+    event?: TradeEventFacts;
 }
 export interface WalletTradesResponse {
     /** Trade-data coverage disclosure. */
@@ -3070,7 +3307,10 @@ export interface TokenTrade {
     tx_signature: string;
     wallet_address: string;
     action: "buy" | "sell";
-    sol_amount: number;
+    /** SOL moved by this trade. `null` = the SOL consideration is unproven
+     *  (`event.price_status` "quote_unpriced" or "proceeds_unattributed"); `0` = a measured zero.
+     *  Since 2026-10-28 an unproven amount is never served as 0. */
+    sol_amount: number | null;
     token_amount: number;
     /** THIS TRADE's executed price: `sol_amount / token_amount`, so it reconciles
      *  exactly with the amounts on the same row and with the PnL endpoints.
@@ -3099,6 +3339,69 @@ export interface TokenTrade {
     traded_at: string;
     /** Exact on-chain amounts — see {@link TradeRawAmounts}. Present once exact amounts are enabled server-side. */
     amounts?: TradeRawAmounts;
+    /** Event identity + attribution labels — see {@link TradeEventFacts}. Present once event reads are enabled server-side. */
+    event?: TradeEventFacts;
+}
+/** Event identity and attribution labels of one Solana trade row (migration 493).
+ *  Every field null = a netted legacy row (one row per transaction, wallet and mint),
+ *  which is every row stored today. Labels are open-ended strings: treat an
+ *  unrecognised value as "not proven". Never deduplicate on
+ *  (tx_signature, wallet_address); event rows of one transaction differ in event_id. */
+export interface TradeEventFacts {
+    /** `signature:outer_ix[.inner_ix]`; null = netted row. */
+    event_id: string | null;
+    /** "signer" | "non_signer" | "unproven" (excluded from wallet-scoped reads); null = legacy row. */
+    trader_status: string | null;
+    /** null = priced | "quote_unpriced" | "proceeds_unattributed": with either label sol_amount is NOT the
+     *  consideration and price_sol / price_usd are null. */
+    price_status: string | null;
+    /** "chain" | "ingest_clock"; null = legacy row (ingest clock). */
+    block_time_source: string | null;
+    /** Migrations 515/516 (not yet enabled): proven economic settlement of an event row; null = netted / nothing proven. */
+    settlement?: TradeSettlement | null;
+    /** Migrations 515/516 (not yet enabled): roles the tx proves; `wallet` only for a proven signer. */
+    parties?: TradeEventParty[];
+}
+/** Amounts are exact base-unit decimal strings (parse with BigInt). */
+export interface TradeSettlement {
+    /** "custody_fee" | "custody_forward" | "router_funded" (later "direct" | "split_parties" | "pumpfun_multihop"); null = only tips / fees. */
+    route: string | null;
+    amount: {
+        mint: string;
+        amount_raw: string;
+    } | null;
+    gross_token_amount_raw: string | null;
+    pool_quote: {
+        mint: string;
+        amount_raw: string;
+    } | null;
+    /** Facts only: a router_fee / pumpswap_cashback fee is never part of the trade's amounts, price, volume, cost basis or PnL. program / recipient / payer: router_fee + pumpswap_cashback only (payer = this trade's wallet, else null); recipient_account: pumpswap_cashback only. */
+    fees: Array<{
+        kind: "funding_fee" | "route_fee_sol" | "router_fee" | "pumpswap_cashback" | (string & {});
+        mint: string;
+        amount_raw: string;
+        program?: string;
+        recipient?: string;
+        recipient_account?: string;
+        payer?: string | null;
+    }>;
+    tips: Array<{
+        amount_raw: string;
+        mint: string;
+        recipient: string;
+        instruction_index: number;
+    }>;
+    /** 1 = the tips are in this trade's PnL basis; 2+ = unallocated (never split). */
+    tips_shared_by_events: number | null;
+}
+export interface TradeEventParty {
+    role: string;
+    ordinal: number;
+    is_signer: boolean | null;
+    /** Only when is_signer is true. */
+    wallet: string | null;
+    mint: string | null;
+    amount_raw: string | null;
 }
 /** Exact amounts of one Solana trade (#508). Integers are decimal STRINGS (u64
  *  base units exceed the JS number range; parse with BigInt).
@@ -3169,6 +3472,11 @@ export interface TokenTopTrader {
     unmatched_sell_tokens?: number | null;
     /** FIFO only: every sold token matched an observed buy. null under average_cost. */
     cost_basis_complete?: boolean | null;
+    /** 2026-10 (migration 508) — basis consumed by sells whose proceeds went to another wallet; not in realized_pnl_sol / roi. Absent on older servers. */
+    unknown_realized_cost_basis_sol?: number;
+    unattributed_sells?: number;
+    /** "unknown" = every sell unattributed: the outcome is unknown, this wallet is not a loser. */
+    realized_status?: RealizedStatus;
     first_trade_at: string;
     last_trade_at: string;
     is_kol: boolean;
@@ -3186,12 +3494,17 @@ export interface TokenTopTradersResponse {
     /** "fifo" = same cost basis as /wallet/{address}/pnl; "average_cost" = legacy fallback (overstates profit on unmatched sells). */
     cost_method?: "fifo" | "average_cost";
     cost_method_note?: string;
+    /** 2026-10 (migration 508) — realized-PnL completeness of the returned page (NOT coverage.completeness). Absent on older servers. */
+    completeness?: RealizedPnlCompleteness;
+    incomplete_reasons?: RealizedPnlIncompleteReason[];
     traders: TokenTopTrader[];
     summary: {
         returned: number;
         known_kols: number;
         known_alpha_wallets: number;
         net_realized_pnl_sol: number;
+        unknown_realized_cost_basis_sol?: number;
+        unattributed_sells?: number;
     };
     /** v1.23.4 — trade-coverage disclosure; when `in_scope` is false an empty
      *  `traders` list means "outside the write-gate", not "nobody traded". */
@@ -4230,7 +4543,7 @@ export interface TokenFeedPagination {
     /** Pass as `before` to page back. */
     next_before: string | null;
 }
-/** The locks feed's pagination: adds the strict keyset cursor and the post-filter scan meta. (Earlier types put these on every feed; the fee-claims and surges routes never send them.) */
+/** The locks feed's pagination: adds the strict keyset cursor and the post-filter scan meta. */
 export interface TokenLocksFeedPagination extends TokenFeedPagination {
     /** v1.24 — pass as `cursor` to page back without skipping same-timestamp rows; null = end. */
     next_cursor?: string | null;
@@ -4858,11 +5171,13 @@ export interface TokenFeeClaimsParams {
     social_platform?: number;
     /** Platform-native numeric user id. */
     social_user_id?: string;
-    /** Amount floor in SOL. */
+    /** Amount floor in SOL; only SOL-quoted events match. */
     min_sol?: number;
     /** ISO date-time (use `pagination.next_since`). */
     since?: string;
-    /** ISO date-time (use `pagination.next_before`). */
+    /** Opaque lossless backward-page cursor (pagination.next_cursor). */
+    cursor?: string;
+    /** Legacy strict timestamp bound; can skip same-timestamp events. */
     before?: string;
     /** 1–100, default 50. */
     limit?: number;
@@ -4908,7 +5223,9 @@ export interface TokenFeeClaimEvent {
 /** GET /tokens/fee-claims — pump.fun fee-event feed, newest first. **History starts 2026-08-17.** PRO+, keyed only. */
 export interface TokenFeeClaimsResponse {
     events: TokenFeeClaimEvent[];
-    pagination: TokenFeedPagination;
+    pagination: TokenFeedPagination & {
+        next_cursor: string | null;
+    };
     /** Pointer to the `token:fee_claims` WS channel (event `token:fee_claim`). */
     stream: TokenFeedStreamPointer;
     meta?: Record<string, unknown>;
@@ -4984,7 +5301,10 @@ export interface TokenSurgeEarlyBuyers {
     count: number;
     /** Early buyers that bought in the same block. */
     bundled: number;
+    /** null when any cohort first buy has an unknown SOL cost (never summed as 0); see cohort_sol_unknown_ranks. */
     cohort_sol: number | null;
+    /** Cohort wallets whose first-buy SOL cost is unknown (0 = cohort_sol is complete). Absent on fires before 2026-10-27. */
+    cohort_sol_unknown_ranks?: number;
     /** Cohort wallets that have already sold. */
     sold: number;
     /** Cohort wallets that are known sniper wallets. */
@@ -5370,6 +5690,21 @@ export interface DeployerActivityFamilyCoverage {
         missing_months: string[];
         months_read: string[];
     };
+    /** launches only (2026-10-18): per supported launchpad, whether this window is fully held. The family-level complete / complete_from follow the strictest of these boundaries. A boundary is known coverage, not proof every transaction arrived. */
+    launchpads?: DeployerActivityLaunchpadCoverage[];
+    /** launches only: NOT supported launchpads (moonit, boop, heaven); their launches never appear and do not affect complete. */
+    launchpads_not_indexed?: string[];
+}
+export interface DeployerActivityLaunchpadCoverage {
+    launchpad: "pumpfun" | "raydium_launchlab" | "meteora_dbc";
+    /** true when the window starts at or after this launchpad's boundary. */
+    complete: boolean;
+    /** Later of the window start and the boundary (pump.fun / LaunchLab unbonded: 2026-07-03T05:00Z; Meteora DBC: 2026-10-03T16:32:57Z). */
+    complete_from: string;
+    /** What exists before complete_from: bonded launches only, or nothing. */
+    before_complete_from: "bonded_only" | "none";
+    /** Launches that never reach a creator's timeline (Bags via a known relayer), or null. */
+    creator_gaps: string | null;
 }
 export interface DeployerActivityRange {
     from: string | null;
@@ -5904,6 +6239,9 @@ export interface TokenBundleExitEvent extends Omit<TokenBundleClusterEvent, "sol
     /** sum over wallets of min(sold, bought) / bought, 0..1. */
     sold_pct: number | null;
     realized_sol: number;
+    /** 2026-10 (migration 511) — "incomplete" when a recorded sell has unknown proceeds: its tokens count in sold_pct, its proceeds are not in realized_sol (never 0). null = not measured. */
+    realized_status?: "complete" | "incomplete" | null;
+    unknown_proceeds_sells?: number | null;
     last_sell_at: string | null;
     recent_sells: Array<{
         wallet: string;
