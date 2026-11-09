@@ -1142,6 +1142,25 @@ export class MadeOnSolREST {
     async copyTradeSignals(params) {
         return this.request("GET", "/copytrade/signals", undefined, params);
     }
+    /**
+     * Signal inbox: your coordination / copy-trade (Solana + RHC) signals in one
+     * order, including the ones fired while you were offline. Fetching does not
+     * acknowledge; call signalInboxAck() with the next_cursor you processed.
+     * Dedupe on delivery_id (= the WS frame's and webhook's delivery_id).
+     */
+    async signalInbox(params = {}) {
+        const q = {
+            products: params.products?.join(","),
+            cursor: params.cursor,
+            since: params.since,
+            limit: params.limit,
+        };
+        return this.request("GET", "/signals/inbox", undefined, q);
+    }
+    /** Mark the inbox read up to and including `cursor`, in that cursor's product set. Monotonic, never deletes. */
+    async signalInboxAck(params) {
+        return this.request("POST", "/signals/inbox/ack", params);
+    }
     /* ── Coordination alerts (PRO/ULTRA) ── */
     /** List your coordination alert rules. */
     async coordinationAlertsList() {

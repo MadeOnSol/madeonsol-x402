@@ -104,6 +104,13 @@ import type {
   CopyTradeRuleWarning,
   CopyTradeSignalsParams,
   CopyTradeSignalsResponse,
+  SignalInboxParams,
+  SignalInboxResponse,
+  SignalInboxAckParams,
+  SignalInboxAckResponse,
+  SignalInboxItem,
+  SignalInboxProduct,
+  SignalPushErrorCode,
   CoordinationAlertRule,
   CoordinationAlertCreateParams,
   CoordinationAlertUpdateParams,
@@ -456,6 +463,13 @@ export type {
   CopyTradeSignal,
   CopyTradeSignalsParams,
   CopyTradeSignalsResponse,
+  SignalInboxParams,
+  SignalInboxResponse,
+  SignalInboxAckParams,
+  SignalInboxAckResponse,
+  SignalInboxItem,
+  SignalInboxProduct,
+  SignalPushErrorCode,
   CoordinationDeliveryMode,
   CoordinationAlertRule,
   CoordinationAlertCreateParams,
@@ -1878,6 +1892,27 @@ export class MadeOnSolREST {
   /** Recent fired copy-trade signals (up to 7 days). */
   async copyTradeSignals(params?: CopyTradeSignalsParams): Promise<CopyTradeSignalsResponse> {
     return this.request("GET", "/copytrade/signals", undefined, params as Record<string, string | number | undefined>);
+  }
+
+  /**
+   * Signal inbox: your coordination / copy-trade (Solana + RHC) signals in one
+   * order, including the ones fired while you were offline. Fetching does not
+   * acknowledge; call signalInboxAck() with the next_cursor you processed.
+   * Dedupe on delivery_id (= the WS frame's and webhook's delivery_id).
+   */
+  async signalInbox(params: SignalInboxParams = {}): Promise<SignalInboxResponse> {
+    const q: Record<string, string | number | undefined> = {
+      products: params.products?.join(","),
+      cursor: params.cursor,
+      since: params.since,
+      limit: params.limit,
+    };
+    return this.request("GET", "/signals/inbox", undefined, q);
+  }
+
+  /** Mark the inbox read up to and including `cursor`, in that cursor's product set. Monotonic, never deletes. */
+  async signalInboxAck(params: SignalInboxAckParams): Promise<SignalInboxAckResponse> {
+    return this.request("POST", "/signals/inbox/ack", params as unknown as Record<string, unknown>);
   }
 
   /* ── Coordination alerts (PRO/ULTRA) ── */

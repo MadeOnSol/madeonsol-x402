@@ -1704,6 +1704,12 @@ export interface CandlesResponse {
     history_clamped?: boolean;
     /** true = the whole requested window is older than the plan floor (200 with no candles). */
     history_outside_plan?: boolean;
+    /** 2026-11-07: response assembly time. */
+    as_of?: string;
+    /** 2026-11-07: start of the still-open bucket (same UTC grid); candles at or after it will change. */
+    open_bucket_start?: string;
+    /** 2026-11-07: "none" = stored candles only, a missing bucket is never synthesized; a stored candle can have trades = 0. */
+    gap_fill?: "none";
 }
 export type TokenFlowWindow = "1h" | "24h";
 export interface TokenFlowParams {
@@ -2075,6 +2081,61 @@ export interface CopyTradeSignalsParams {
     max_mc_usd?: number;
     /** `next_cursor` from the previous page — opaque strict (fired_at, id) keyset. The MC band is applied before limit and cursor. */
     cursor?: string;
+}
+export type SignalInboxProduct = "coordination" | "copytrade" | "rhc_coordination" | "rhc_copytrade";
+export type SignalPushErrorCode = "ws_not_connected" | "ws_not_subscribed" | "ws_replay_dropped" | "ws_failed" | "webhook_no_secret" | "webhook_failed";
+export interface SignalInboxParams {
+    /** Product set (default all four). A cursor is bound to the set it was issued for. */
+    products?: SignalInboxProduct[];
+    /** next_cursor of a previous page, or "acked" to resume from your acknowledged position for this set. */
+    cursor?: string;
+    /** Start without a cursor (default: 7 days ago). Not combinable with cursor. */
+    since?: string;
+    /** 1-500, default 100. */
+    limit?: number;
+}
+export interface SignalInboxItem {
+    /** "<product>:<id>": the same key as the WS frame's and the webhook's delivery_id (and X-MadeOnSol-Delivery-Id). Dedupe on it. */
+    delivery_id: string;
+    /** The numeric signal row id, as on the WS frame. */
+    signal_id: number;
+    product: SignalInboxProduct;
+    /** UTC, microsecond precision. */
+    fired_at: string;
+    rule_id?: string;
+    subscription_id?: string;
+    /** Server-side push result at fire time; never proof that your client received it. */
+    delivery: {
+        pushed: boolean;
+        push_error: SignalPushErrorCode | null;
+    };
+    data: Record<string, unknown>;
+}
+export interface SignalInboxResponse {
+    products: SignalInboxProduct[];
+    scope: string;
+    signals: SignalInboxItem[];
+    next_cursor: string | null;
+    /** Exact: true only when another row exists after this page. */
+    has_more: boolean;
+    acked_cursor: string | null;
+    retention_days: Partial<Record<SignalInboxProduct, number | null>>;
+    retained_from: string | null;
+    start_before_retention: boolean;
+}
+export interface SignalInboxAckParams {
+    /** A next_cursor from signalInbox(); its product set is the ack scope. */
+    cursor: string;
+    /** Optional; must be the same set the cursor came from. */
+    products?: SignalInboxProduct[];
+}
+export interface SignalInboxAckResponse {
+    scope: string;
+    /** false = the position was not after the stored one (nothing changed). */
+    advanced: boolean;
+    /** Signals newly covered by this call. */
+    acked_now: number;
+    acked_cursor: string | null;
 }
 export interface CopyTradeSignalsResponse {
     signals: CopyTradeSignal[];
@@ -2539,6 +2600,20 @@ export interface TokenSnapshotKolActivity {
     sell_sol: number | null;
     counts_basis: "complete_window" | null;
 }
+/** include=flow_24h block of GET /token/{mint} (ULTRA+). */
+export interface TokenFlow24h {
+    status: "ok" | "no_candles" | "incomplete" | "unavailable";
+    source: "candle_tape_1m";
+    window_from: string;
+    window_to: string;
+    buy_volume_usd: number | null;
+    sell_volume_usd: number | null;
+    net_flow_usd: number | null;
+    mev_volume_usd: number | null;
+    buys: number | null;
+    sells: number | null;
+    candle_hours: number;
+}
 /** Response of GET /token/{mint} — live token snapshot. */
 export interface TokenSnapshotResponse {
     token: TokenSnapshot;
@@ -2548,6 +2623,8 @@ export interface TokenSnapshotResponse {
     buyer_quality?: Record<string, unknown>;
     /** Present when include=deployer — the /deployer-hunter/{wallet} body. */
     deployer_profile?: Record<string, unknown>;
+    /** Present when include=flow_24h on ULTRA+: 24 h organic buy/sell split from the 1m candle tape. Figures are null unless status is "ok". */
+    flow_24h?: TokenFlow24h;
     /** Per-key errors for requested includes that failed (never fails the request). */
     include_errors?: Record<string, {
         status: number;
@@ -4169,6 +4246,10 @@ export interface TokenHoldersConcentration {
      */
     holder_count: number | null;
     holder_count_source: "census" | null;
+    /** 2026-11-07: measured = exact census; not_measured = top-20 view (holder_count null). */
+    holder_count_status?: "measured" | "not_measured";
+    /** 2026-11-07: fallback code (never provider text) or "top20_view". */
+    holder_count_reason?: string | null;
     token_accounts_nonzero: number | null;
     /** Raw u64 as STRINGS. */
     supply_raw: string | null;
@@ -4216,6 +4297,8 @@ export interface TokenHoldersResponse {
     /** Ledger slot the holder set was read at. */
     slot: number | null;
     as_of: string;
+    /** 2026-11-07: seconds since as_of (answers are cached 60 s to 10 min per mint). */
+    age_seconds?: number;
     holders: TokenHolder[];
     count: number;
     /** Rank cap by tier: 10 PRO, 50 ULTRA, 100 BUSINESS. */
