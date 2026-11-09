@@ -1,5 +1,7 @@
 export { followTokens, walletTrades } from './early-subscriptions.js';
 import { MadeOnSolEarlyStream } from './early-stream.js';
+import { MadeOnSolDexStream } from './dex-stream.js';
+export { MadeOnSolDexStream, dexFrameKey } from './dex-stream.js';
 export { MadeOnSolEarlyStream, expandEarlyFrame } from './early-stream.js';
 import { SolanaPaymentBudget, createSolanaPaidFetch } from "./solana-payment.js";
 import { readPaidResult, x402PaymentErrorFrom } from "./x402-recovery.js";
@@ -673,6 +675,14 @@ export class MadeOnSolREST {
     /** ULTRA+ ShredPrism early-stream client; `early_ws_url` must be present in token discovery. */
     earlyStream(opts) {
         return new MadeOnSolEarlyStream({ ...opts, getToken: () => this.getStreamToken() });
+    }
+    /**
+     * ULTRA+ Solana DEX firehose client (`dex_ws_url`). Re-subscribes with an ascending ring
+     * replay after a reconnect, drops trades it already delivered and reports a `gap` status
+     * when the ring cannot reach back to the last delivered trade.
+     */
+    dexStream(opts) {
+        return new MadeOnSolDexStream({ ...opts, getToken: () => this.getStreamToken() });
     }
     /**
      * Open a managed real-time WebSocket stream. Handles the token fetch (the

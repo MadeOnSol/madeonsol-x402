@@ -1,5 +1,7 @@
 export { followTokens, walletTrades } from './early-subscriptions.js';
 import { MadeOnSolEarlyStream, type EarlyStreamOptions } from './early-stream.js';
+import { MadeOnSolDexStream, type DexStreamOptions } from './dex-stream.js';
+export { MadeOnSolDexStream, dexFrameKey, type DexStreamOptions, type DexStreamFilters, type DexStreamSubscription, type DexStreamFrame, type DexTradeData } from './dex-stream.js';
 export { MadeOnSolEarlyStream, expandEarlyFrame, type EarlyStreamOptions, type EarlyCursor, type EarlyFrame } from './early-stream.js';
 export type { EarlyWalletList, EarlyWalletListSummary, EarlyWalletListControl, EarlyWalletListResult, EarlyChannel, EarlyAmountField, EarlyAmountFilter, EarlyStreamFilters, EarlyEventFormat, EarlySubscribeControl, EarlyUpdateControl, EarlyObservationBase, EarlyWalletLabel, EarlyDeployObservationData, EarlyTradeObservationData, EarlyLiquidityCreatePoolObservationData, EarlyLiquidityAddObservationData, EarlyLiquidityRemoveObservationData, EarlyLiquidityObservationData, EarlyMigrationObservationData, EarlyLockSchedule, EarlyLockObservationData, EarlyTokenAmountChangeObservationData, EarlyTokenFreezeObservationData, EarlyTokenAuthorityObservationData, EarlyTokenChangeObservationData, EarlyObservationData, EarlyOutcomeData } from './types.js';
 import { SolanaPaymentBudget, createSolanaPaidFetch, type SolanaPaymentPolicy } from "./solana-payment.js";
@@ -1381,6 +1383,15 @@ export class MadeOnSolREST {
   /** ULTRA+ ShredPrism early-stream client; `early_ws_url` must be present in token discovery. */
   earlyStream(opts: Omit<EarlyStreamOptions, 'getToken'>): MadeOnSolEarlyStream {
     return new MadeOnSolEarlyStream({ ...opts, getToken: () => this.getStreamToken() });
+  }
+
+  /**
+   * ULTRA+ Solana DEX firehose client (`dex_ws_url`). Re-subscribes with an ascending ring
+   * replay after a reconnect, drops trades it already delivered and reports a `gap` status
+   * when the ring cannot reach back to the last delivered trade.
+   */
+  dexStream(opts: Omit<DexStreamOptions, 'getToken'>): MadeOnSolDexStream {
+    return new MadeOnSolDexStream({ ...opts, getToken: () => this.getStreamToken() });
   }
 
   /**

@@ -12,6 +12,8 @@
 > [content/package release checklist](../../docs/runbooks/agent-gateway-content-release.md).
 
 
+> **New in 4.7.0: managed Solana DEX stream client (additive).** `MadeOnSolREST.dexStream()` connects to the DEX firehose (`dex_ws_url`, ULTRA / BUSINESS / ENTERPRISE) with your stream token and subscribes with your filters (for example `token_mints` plus `min_sol: 0` for a complete per-token tape). After a disconnect it reconnects with backoff, asks the server ring for up to 500 trades in ascending order, drops the trades it already delivered (key: `tx_signature` + `wallet` + `action` + `mint`, exported as `dexFrameKey()`), and emits a `gap` status when the ring cannot reach back to the last delivered trade. The ring is in memory on the server: it is recovery for short outages, not durable history; use `/tokens/{mint}/trades` for older trades. `block_time` on this socket is ingest time in whole seconds. Existing methods are unchanged.
+
 > **New in 4.6.0: signal inbox, 24-hour token flow and candle metadata (additive).** `signalInbox()` / `signalInboxAck()` read your coordination and copy-trade signals (Solana + RHC) in one order, including the ones fired while you were offline; fetching does not acknowledge, and you dedupe on `delivery_id` (the same key as on the WS frame and the webhook). The server enables the inbox separately and announces it in the changelog; until then both calls get 503 `feature_disabled`. New types: `SignalInbox*`, `SignalPushErrorCode`, `TokenFlow24h` (token detail `flow_24h`), and candle responses gain `as_of`, `open_bucket_start` and `gap_fill: "none"`. The WS section documents the connection rule (ping every 15 s, closed after 30 s without an answer), with a raw client in `examples/raw-websocket-liveness.mjs`. Existing methods are unchanged.
 
 > **New in 4.5.0: positions without a proven cost basis are `unknown` (types).** `RealizedPnlIncompleteReason` and the `/wallet/{address}/pnl` `incomplete_reasons` gain `missing_cost_basis`: a sale beyond the observed buys has no proven cost basis, so that closed position has `result: "unknown"`, `roi_pct: null` and no win or loss, and the response says `completeness: "incomplete"`. Win rates count only positions with a known outcome. Live on the API since 2026-11-07. A `switch` over `result` that assumed three values needs an `unknown` branch. Types only.
@@ -688,6 +690,30 @@ Docs: [madeonsol.com/solana-api](https://madeonsol.com/solana-api)
 | MCP Server (Claude, Cursor) | [`mcp-server-madeonsol`](https://www.npmjs.com/package/mcp-server-madeonsol) · [Smithery](https://smithery.ai/servers/madeonsol/solana-kol-intelligence) · [Glama](https://glama.ai/mcp/servers/madeonsol/mcp-server-madeonsol) |
 | ElizaOS | [`@madeonsol/plugin-madeonsol`](https://www.npmjs.com/package/@madeonsol/plugin-madeonsol) |
 | Solana Agent Kit | [`solana-agent-kit-plugin-madeonsol`](https://www.npmjs.com/package/solana-agent-kit-plugin-madeonsol) |
+
+## Managed Solana DEX stream client (4.7.0+)
+
+`MadeOnSolREST.dexStream()` follows the DEX firehose (`dex:trades`, plus optional `dex:route` / `dex:leg` / `dex:liquidity`) for ULTRA, BUSINESS and ENTERPRISE keys.
+
+```ts
+const tape = api.dexStream({
+  subscriptions: [{ sub_id: "tape", filters: { token_mints: [mint], min_sol: 0 } }],
+  onFrame: (f) => { if (f.channel === "dex:trades") render(f.data); },
+  onStatus: (s) => {
+    // connecting | connected | subscribed | replay_done | gap | close | reconnect | fatal | server_error
+    if (s.type === "gap") showWarning("Some trades may be missing; reload history from /tokens/{mint}/trades");
+  },
+});
+tape.connect();
+// tape.getProgress() -> { tape: <block_time of the last delivered trade> }
+// tape.close();
+```
+
+- First connect: no replay by default (`initialReplay`, 0 to 500). Reconnect: `replayOnReconnect` (default 500, the server maximum), ascending.
+- Every frame passes a per-subscription dedupe (`dedupeSize`, default 20,000 keys), so a replay that overlaps what you already saw is delivered once.
+- `gap` means the ring was full and its oldest trade is newer than the last trade you received, or the server reported `complete: false`. Recover from REST.
+- Close codes 4001 (token rejected) and 4003 (tier) are fatal; 4002 (connection slot limit) waits at least 60 s before the next attempt.
+- Up to 5 subscriptions per client, at most 50 mints per `token_mints` filter (server rule).
 
 ## Managed ShredPrism early-stream client (4.1.0+)
 
